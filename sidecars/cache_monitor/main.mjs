@@ -24,6 +24,11 @@ const ID_RE = /^[a-zA-Z0-9_-]{8,}$/;
 const MAX_CACHE_ENTRIES = 64;
 const MIN_STREAM_MS = 500;
 const MIN_E2E_MS = 100;
+const MAX_BREAKDOWN_ITEMS = 20;
+const MAX_RETRY_ERRORS = 3;
+const UTF8 = new TextDecoder('utf-8');
+
+const decodeUtf8 = (bytes) => (bytes && bytes.length > 0 ? UTF8.decode(bytes) : '');
 
 const toInt = (v) => {
   const n = Number(v);
@@ -197,22 +202,399 @@ function decodeStepMeta(buf) {
   return { ttftMs, genMs, modelMs, thinkingTokens, responseTokens };
 }
 
-function readDbTimings(dbPath) {
+function percentile(sorted, p) {
+  if (!sorted || sorted.length === 0) return null;
+  if (sorted.length === 1) return Math.round(sorted[0]);
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return Math.round(sorted[lo]);
+  return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo));
+}
+
+function decodePackedVarints(buf) {
+  if (!buf || buf.length === 0) return [];
+  const out = [];
+  const n = buf.length;
+  let i = 0;
+  while (i < n) {
+    let val = 0n;
+    let shift = 0n;
+    let complete = false;
+    while (i < n) {
+      const b = buf[i++];
+      if (shift <= 63n) {
+        val |= BigInt(b & 0x7f) << shift;
+      }
+      if ((b & 0x80) === 0) {
+        complete = true;
+        break;
+      }
+      shift += 7n;
+      if (shift > 70n) return out;
+    }
+    if (!complete) break;
+    out.push(Number(val));
+  }
+  return out;
+}
+
+function mergeIntervalsMs(intervals) {
+  if (!intervals || intervals.length === 0) return 0;
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let [curStart, curEnd] = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const [s, e] = sorted[i];
+    if (s <= curEnd) {
+      if (e > curEnd) curEnd = e;
+    } else {
+      total += curEnd - curStart;
+      curStart = s;
+      curEnd = e;
+    }
+  }
+  total += curEnd - curStart;
+  return Math.round(total);
+}
+
+function decodeContextBreakdown(buf) {
+  let reportedTotal = 0;
+  const rawCats = [];
+
+  for (const bf of parseProtoFields(buf)) {
+    if (bf.field === 2 && bf.wire === 0) {
+      reportedTotal = Number(bf.val);
+    } else if (bf.field === 1 && bf.wire === 2) {
+      let key = '';
+      let count = 0;
+      let tokens = 0;
+      const items = [];
+      for (const cf of parseProtoFields(bf.bytes)) {
+        if (cf.field === 1 && cf.wire === 2) {
+          key = decodeUtf8(cf.bytes);
+        } else if (cf.field === 2 && cf.wire === 0) {
+          count = Number(cf.val);
+        } else if (cf.field === 4 && cf.wire === 0) {
+          tokens = Number(cf.val);
+        } else if (cf.field === 5 && cf.wire === 2) {
+          let name = '';
+          let itemTokens = 0;
+          for (const itf of parseProtoFields(cf.bytes)) {
+            if (itf.field === 1 && itf.wire === 2) name = decodeUtf8(itf.bytes);
+            else if (itf.field === 3 && itf.wire === 0) itemTokens = Number(itf.val);
+          }
+          if (name && itemTokens > 0) {
+            items.push({ name, tokens: itemTokens });
+          }
+        }
+      }
+      if (key && tokens > 0) {
+        items.sort((a, b) => b.tokens - a.tokens);
+        rawCats.push({
+          key,
+          count: count || items.length,
+          tokens,
+          totalItems: items.length,
+          items: items.slice(0, MAX_BREAKDOWN_ITEMS),
+        });
+      }
+    }
+  }
+
+  if (rawCats.length === 0) return null;
+  const sumTokens = rawCats.reduce((acc, c) => acc + c.tokens, 0);
+  const totalTokens = reportedTotal > 0 ? reportedTotal : sumTokens;
+  const categories = rawCats.map((cat) => ({
+    key: cat.key,
+    count: cat.count,
+    tokens: cat.tokens,
+    pct: totalTokens > 0 ? Math.round((cat.tokens * 1000) / totalTokens) / 10 : 0,
+    totalItems: cat.totalItems,
+    items: cat.items.map((it) => ({
+      name: it.name,
+      tokens: it.tokens,
+      pct: totalTokens > 0 ? Math.round((it.tokens * 1000) / totalTokens) / 10 : 0,
+    })),
+  }));
+
+  return { totalTokens, categories };
+}
+
+function decodeGenMeta(buf, parseBreakdown) {
+  let primaryStepIdx = null;
+  let modelSlug = '';
+  let modelDisplay = '';
+  let retryField = 0;
+  const errors = [];
+  let compactionCutoff = null;
+  let contextTokens = null;
+  let compactionFlag = 0;
+  let contextLimit = null;
+  let breakdown = null;
+
+  // Only traverse compact telemetry fields; skip large prompt/history blobs (top.f3/f8, f1.f1/f2/f8/f10/f16).
+  for (const tf of parseProtoFields(buf)) {
+    if (tf.wire !== 2) continue;
+    if (tf.field === 2) {
+      const idxs = decodePackedVarints(tf.bytes);
+      if (idxs.length > 0) primaryStepIdx = idxs[0];
+    } else if (tf.field === 1) {
+      for (const inf of parseProtoFields(tf.bytes)) {
+        if (inf.field === 14 && inf.wire === 0) {
+          retryField = Number(inf.val);
+        } else if (inf.wire !== 2) {
+          continue;
+        } else if (inf.field === 19) {
+          modelSlug = decodeUtf8(inf.bytes);
+        } else if (inf.field === 21) {
+          modelDisplay = decodeUtf8(inf.bytes);
+        } else if (inf.field === 17) {
+          if (errors.length < MAX_RETRY_ERRORS) {
+            for (const af of parseProtoFields(inf.bytes)) {
+              if (af.field === 3 && af.wire === 2 && af.bytes.length > 0) {
+                let errMsg = decodeUtf8(af.bytes).replace(/\s+/g, ' ').trim();
+                if (errMsg) {
+                  if (errMsg.length > 140) errMsg = `${errMsg.slice(0, 137)}...`;
+                  errors.push(errMsg);
+                }
+                break;
+              }
+            }
+          }
+        } else if (inf.field === 9) {
+          for (const cf of parseProtoFields(inf.bytes)) {
+            if (cf.field === 1 && cf.wire === 0) {
+              compactionCutoff = Number(cf.val);
+            } else if (cf.field === 10 && cf.wire === 2) {
+              for (const sf of parseProtoFields(cf.bytes)) {
+                if (sf.wire === 0) {
+                  if (sf.field === 1) contextTokens = Number(sf.val);
+                  else if (sf.field === 2) compactionFlag = Number(sf.val);
+                  else if (sf.field === 4) contextLimit = Number(sf.val);
+                } else if (parseBreakdown && sf.field === 3 && sf.wire === 2 && sf.bytes.length > 0) {
+                  breakdown = decodeContextBreakdown(sf.bytes);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    primaryStepIdx,
+    modelSlug,
+    modelDisplay,
+    compactionCutoff,
+    contextTokens,
+    compactionFlag,
+    contextLimit,
+    breakdown,
+    retryCount: Math.max(retryField, errors.length),
+    interrupted: retryField === 0 && errors.length > 0,
+    retryError: errors[0] || null,
+  };
+}
+
+function decodeToolStepMeta(buf) {
+  let createdAtMs = null;
+  let f6Ms = null;
+  let startedAtMs = null;
+  let completedAtMs = null;
+  let toolName = 'unknown';
+
+  for (const f of parseProtoFields(buf)) {
+    if (f.wire !== 2) continue;
+    if (f.field === 1) {
+      createdAtMs = decodeTimestampMs(f.bytes);
+    } else if (f.field === 6) {
+      f6Ms = decodeTimestampMs(f.bytes);
+    } else if (f.field === 7) {
+      startedAtMs = decodeTimestampMs(f.bytes);
+    } else if (f.field === 8) {
+      completedAtMs = decodeTimestampMs(f.bytes);
+    } else if (f.field === 4) {
+      for (const tc of parseProtoFields(f.bytes)) {
+        if (tc.field === 2 && tc.wire === 2 && tc.bytes.length > 0) {
+          toolName = decodeUtf8(tc.bytes) || 'unknown';
+          break;
+        }
+      }
+    }
+  }
+
+  const execStartMs = startedAtMs ?? f6Ms ?? createdAtMs;
+  const execMs = (execStartMs !== null && completedAtMs !== null && completedAtMs >= execStartMs)
+    ? Math.round(completedAtMs - execStartMs)
+    : null;
+
+  return { toolName, execStartMs, completedAtMs, execMs };
+}
+
+function readDbData(dbPath) {
   if (!DatabaseSync || !dbPath || !existsSync(dbPath)) return null;
   let db = null;
   try {
     db = new DatabaseSync(dbPath, { readOnly: true, timeout: 200 });
-    const rows = db.prepare('SELECT idx, metadata FROM steps WHERE step_type = 15 ORDER BY idx').all();
-    const map = new Map();
-    for (const row of rows) {
+
+    const timings = new Map();
+    const stepRows = db.prepare('SELECT idx, metadata FROM steps WHERE step_type = 15 ORDER BY idx').all();
+    for (const row of stepRows) {
       if (row && row.metadata instanceof Uint8Array) {
         const idx = Number(row.idx);
         if (Number.isFinite(idx)) {
-          map.set(idx, decodeStepMeta(row.metadata));
+          timings.set(idx, decodeStepMeta(row.metadata));
         }
       }
     }
-    return map;
+
+    const genByStepIdx = new Map();
+    let latestContext = null;
+    try {
+      const gmRows = db.prepare('SELECT idx, data FROM gen_metadata ORDER BY idx').all();
+      let prevCutoff = null;
+      let prevCtx = null;
+      let latestUsage = null;
+      let latestBreakdown = null;
+
+      for (let i = 0; i < gmRows.length; i++) {
+        const row = gmRows[i];
+        if (!row || !(row.data instanceof Uint8Array)) continue;
+        const gm = decodeGenMeta(row.data, i === gmRows.length - 1);
+
+        if (gm.contextLimit > 0 && (gm.contextTokens > 0 || gm.primaryStepIdx !== null)) {
+          const used = gm.contextTokens ?? 0;
+          latestUsage = {
+            used,
+            limit: gm.contextLimit,
+            pct: Math.round((used * 1000) / gm.contextLimit) / 10,
+          };
+        }
+        if (gm.breakdown) {
+          latestBreakdown = gm.breakdown;
+        }
+
+        if (gm.primaryStepIdx !== null) {
+          const compacted = Boolean(
+            gm.compactionFlag > 0
+            || (gm.compactionCutoff !== null && gm.compactionCutoff !== prevCutoff)
+          );
+          const prevContextTokens = compacted ? prevCtx : null;
+          genByStepIdx.set(gm.primaryStepIdx, { ...gm, compacted, prevContextTokens });
+
+          if (gm.compactionCutoff !== null) prevCutoff = gm.compactionCutoff;
+          if (gm.contextTokens !== null && gm.contextTokens > 0) prevCtx = gm.contextTokens;
+        }
+      }
+
+      if (latestUsage) {
+        latestContext = { ...latestUsage, breakdown: latestBreakdown };
+      }
+    } catch {
+      // ignore missing/incompatible gen_metadata on older DB schemas
+    }
+
+    let tools = null;
+    try {
+      const toolRows = db.prepare('SELECT idx, status, metadata, length(error_details) AS err_len FROM steps WHERE step_type = 132 ORDER BY idx').all();
+      const toolMap = new Map();
+      const toolIntervals = [];
+      let totalCalls = 0;
+      let okCalls = 0;
+      let failedCalls = 0;
+      let canceledCalls = 0;
+      let runningCalls = 0;
+      let totalExecMs = 0;
+
+      for (const row of toolRows) {
+        const tm = (row && row.metadata instanceof Uint8Array)
+          ? decodeToolStepMeta(row.metadata)
+          : { toolName: 'unknown', execStartMs: null, completedAtMs: null, execMs: null };
+        totalCalls += 1;
+
+        let entry = toolMap.get(tm.toolName);
+        if (!entry) {
+          entry = {
+            name: tm.toolName,
+            calls: 0,
+            ok: 0,
+            failed: 0,
+            canceled: 0,
+            running: 0,
+            totalMs: 0,
+            timedCalls: 0,
+            maxMs: 0,
+            durations: [],
+          };
+          toolMap.set(tm.toolName, entry);
+        }
+        entry.calls += 1;
+
+        const status = Number(row.status);
+        const hasErr = Number(row.err_len) > 0;
+        if (status === 3 && !hasErr) {
+          entry.ok += 1;
+          okCalls += 1;
+        } else if (status === 4 || status === 7 || hasErr) {
+          entry.failed += 1;
+          failedCalls += 1;
+        } else if (status === 6) {
+          entry.canceled += 1;
+          canceledCalls += 1;
+        } else if (status === 2 || status === 9) {
+          entry.running += 1;
+          runningCalls += 1;
+        }
+
+        if (tm.execMs !== null) {
+          entry.durations.push(tm.execMs);
+          entry.totalMs += tm.execMs;
+          entry.timedCalls += 1;
+          if (tm.execMs > entry.maxMs) entry.maxMs = tm.execMs;
+          totalExecMs += tm.execMs;
+          if (tm.execStartMs !== null && tm.completedAtMs !== null && tm.completedAtMs >= tm.execStartMs) {
+            toolIntervals.push([tm.execStartMs, tm.completedAtMs]);
+          }
+        }
+      }
+
+      if (totalCalls > 0) {
+        const items = [...toolMap.values()]
+          .map(({ durations, ...rest }) => {
+            const sorted = [...durations].sort((a, b) => a - b);
+            const completed = rest.ok + rest.failed;
+            return {
+              ...rest,
+              failRatePct: completed > 0 ? Math.round((rest.failed * 1000) / completed) / 10 : 0,
+              avgMs: rest.timedCalls > 0 ? Math.round(rest.totalMs / rest.timedCalls) : null,
+              p50Ms: percentile(sorted, 0.5),
+              maxMs: rest.timedCalls > 0 ? rest.maxMs : null,
+            };
+          })
+          .sort((a, b) => (b.totalMs - a.totalMs) || (b.calls - a.calls));
+
+        const totalCompleted = okCalls + failedCalls;
+        tools = {
+          summary: {
+            totalCalls,
+            okCalls,
+            failedCalls,
+            canceledCalls,
+            runningCalls,
+            failRatePct: totalCompleted > 0 ? Math.round((failedCalls * 1000) / totalCompleted) / 10 : 0,
+            totalExecMs,
+            wallToolMs: mergeIntervalsMs(toolIntervals),
+          },
+          items,
+        };
+      }
+    } catch {
+      // ignore tool query errors on older DB schemas
+    }
+
+    return { timings, genByStepIdx, latestContext, tools };
   } catch {
     return null;
   } finally {
@@ -222,16 +604,6 @@ function readDbTimings(dbPath) {
       // ignore close errors
     }
   }
-}
-
-function percentile(sorted, p) {
-  if (!sorted || sorted.length === 0) return null;
-  if (sorted.length === 1) return Math.round(sorted[0]);
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return Math.round(sorted[lo]);
-  return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo));
 }
 
 function statSig(p) {
@@ -260,7 +632,9 @@ function parseTranscript(filePath, dbPath, sig) {
     return null;
   }
 
-  const dbTimings = readDbTimings(dbPath);
+  const dbData = readDbData(dbPath);
+  const dbTimings = dbData?.timings ?? null;
+  const dbGen = dbData?.genByStepIdx ?? null;
 
   const entries = [];
   for (const line of raw.split(/\r?\n/)) {
@@ -293,6 +667,10 @@ function parseTranscript(filePath, dbPath, sig) {
   let sessionValidE2eSteps = 0;
   let burstStepCount = 0;
   let sessionTotalGenMs = 0;
+  let sessionTotalModelMs = 0;
+  let compactionCount = 0;
+  let retryStepCount = 0;
+  let totalRetries = 0;
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -300,6 +678,7 @@ function parseTranscript(filePath, dbPath, sig) {
 
     seq += 1;
     const stepIndex = Number.isFinite(Number(entry.step_index)) ? Number(entry.step_index) : null;
+    const gen = (stepIndex !== null && dbGen) ? dbGen.get(stepIndex) ?? null : null;
     const inputTokens = toInt(entry.input_tokens);
     const cacheReadTokens = toInt(entry.cache_read_tokens);
     const cacheCreateTokens = toInt(entry.cache_creation_tokens ?? entry.cache_creation_input_tokens);
@@ -307,7 +686,10 @@ function parseTranscript(filePath, dbPath, sig) {
     const totalInput = inputTokens + cacheReadTokens + cacheCreateTokens;
     const hitPct = totalInput > 0 ? Math.round((cacheReadTokens * 100) / totalInput) : 0;
     const hitRate = totalInput > 0 ? Math.round((cacheReadTokens * 1000) / totalInput) / 10 : 0;
-    const model = typeof entry.model === 'string' && entry.model ? entry.model : 'unknown';
+    const model = (typeof entry.model === 'string' && entry.model)
+      || gen?.modelSlug
+      || gen?.modelDisplay
+      || 'unknown';
     const isFirstForModel = !seenModels.has(model);
     seenModels.add(model);
     const isCold = isFirstForModel && cacheReadTokens === 0;
@@ -366,6 +748,7 @@ function parseTranscript(filePath, dbPath, sig) {
       : null;
 
     if (modelMs !== null) {
+      sessionTotalModelMs += modelMs;
       const exactModelSec = Math.round(modelMs / 1000);
       if (firstToolStartMs !== null) {
         modelDurationSec = exactModelSec;
@@ -376,6 +759,23 @@ function parseTranscript(filePath, dbPath, sig) {
         durationSec = exactModelSec;
         toolDurationSec = null;
       }
+    }
+
+    const contextTokens = gen?.contextTokens ?? null;
+    const contextLimit = gen?.contextLimit ?? null;
+    const contextPct = (contextTokens !== null && contextLimit > 0)
+      ? Math.round((contextTokens * 1000) / contextLimit) / 10
+      : null;
+    const compacted = Boolean(gen?.compacted);
+    const prevContextTokens = gen?.prevContextTokens ?? null;
+    const retryCount = gen?.retryCount ?? 0;
+    const interrupted = Boolean(gen?.interrupted);
+    const retryError = gen?.retryError ?? null;
+
+    if (compacted) compactionCount += 1;
+    if (retryCount > 0) {
+      retryStepCount += 1;
+      totalRetries += retryCount;
     }
 
     totalUncached += inputTokens;
@@ -427,6 +827,14 @@ function parseTranscript(filePath, dbPath, sig) {
       isBurst,
       thinkingTokens,
       responseTokens,
+      contextTokens,
+      contextLimit,
+      contextPct,
+      compacted,
+      prevContextTokens,
+      retryCount,
+      interrupted,
+      retryError,
     });
 
     let m = modelMap.get(model);
@@ -516,6 +924,26 @@ function parseTranscript(filePath, dbPath, sig) {
     })
     .sort((a, b) => (b.steps - a.steps) || (b.totalInput - a.totalInput));
 
+  const context = (dbData?.latestContext && dbData.latestContext.limit > 0)
+    ? {
+        used: dbData.latestContext.used,
+        limit: dbData.latestContext.limit,
+        pct: dbData.latestContext.pct,
+        compactionCount,
+        breakdown: dbData.latestContext.breakdown ?? null,
+      }
+    : null;
+
+  const tools = (dbData?.tools && dbData.tools.summary.totalCalls > 0)
+    ? {
+        summary: {
+          ...dbData.tools.summary,
+          totalModelMs: sessionTotalModelMs > 0 ? sessionTotalModelMs : null,
+        },
+        items: dbData.tools.items,
+      }
+    : null;
+
   const summary = {
     stepCount,
     latestStep,
@@ -561,9 +989,15 @@ function parseTranscript(filePath, dbPath, sig) {
     validE2eSteps: sessionValidE2eSteps,
     burstStepCount,
     totalGenMs: sessionTotalGenMs > 0 ? sessionTotalGenMs : null,
+    totalModelMs: sessionTotalModelMs > 0 ? sessionTotalModelMs : null,
+    compactionCount,
+    retryStepCount,
+    totalRetries,
+    hasContext: Boolean(context),
+    hasTools: Boolean(tools),
   };
 
-  const result = { sig, summary, models, steps };
+  const result = { sig, summary, models, steps, context, tools };
   transcriptCache.set(filePath, result);
   if (transcriptCache.size > MAX_CACHE_ENTRIES) {
     const oldestKey = transcriptCache.keys().next().value;
@@ -572,61 +1006,71 @@ function parseTranscript(filePath, dbPath, sig) {
   return result;
 }
 
-const app = new SidecarApp();
+function startServer() {
+  const app = new SidecarApp();
 
-app.page('/', () => readFileSync(join(__dirname, 'index.html'), 'utf-8'));
+  app.page('/', () => readFileSync(join(__dirname, 'index.html'), 'utf-8'));
 
-app.api('/styles.css', () => new Response(
-  readFileSync(join(__dirname, 'styles.css'), 'utf-8'),
-  { contentType: 'text/css; charset=utf-8', headers: { 'Cache-Control': 'no-store' } }
-), 'GET');
+  app.api('/styles.css', () => new Response(
+    readFileSync(join(__dirname, 'styles.css'), 'utf-8'),
+    { contentType: 'text/css; charset=utf-8', headers: { 'Cache-Control': 'no-store' } }
+  ), 'GET');
 
-app.api('/app.js', () => new Response(
-  readFileSync(join(__dirname, 'app.js'), 'utf-8'),
-  { contentType: 'application/javascript; charset=utf-8', headers: { 'Cache-Control': 'no-store' } }
-), 'GET');
+  app.api('/app.js', () => new Response(
+    readFileSync(join(__dirname, 'app.js'), 'utf-8'),
+    { contentType: 'application/javascript; charset=utf-8', headers: { 'Cache-Control': 'no-store' } }
+  ), 'GET');
 
-app.api('/api/cache', (data) => {
-  const conv = (typeof data.conversationId === 'string' && data.conversationId.trim())
-    || app.config.conversationId
-    || '';
-  if (!conv || !ID_RE.test(conv)) {
-    return { conversationId: conv || null, status: 'no_conversation', etag: 'none' };
-  }
+  app.api('/api/cache', (data) => {
+    const conv = (typeof data.conversationId === 'string' && data.conversationId.trim())
+      || app.config.conversationId
+      || '';
+    if (!conv || !ID_RE.test(conv)) {
+      return { conversationId: conv || null, status: 'no_conversation', etag: 'none' };
+    }
 
-  const found = findTranscript(conv);
-  if (!found) {
-    return { conversationId: conv, status: 'waiting', etag: `${conv}|missing` };
-  }
+    const found = findTranscript(conv);
+    if (!found) {
+      return { conversationId: conv, status: 'waiting', etag: `${conv}|missing` };
+    }
 
-  let st;
-  try {
-    st = statSync(found.filePath);
-  } catch {
-    return { conversationId: conv, status: 'waiting', etag: `${conv}|missing` };
-  }
+    let st;
+    try {
+      st = statSync(found.filePath);
+    } catch {
+      return { conversationId: conv, status: 'waiting', etag: `${conv}|missing` };
+    }
 
-  const dbPath = join(found.appData, 'conversations', `${conv}.db`);
-  const walPath = `${dbPath}-wal`;
-  const sig = `${st.mtimeMs}:${st.size}|${statSig(dbPath)}|${statSig(walPath)}`;
-  const etag = `${conv}|${sig}`;
-  if (data.etag && data.etag === etag) {
-    return { conversationId: conv, status: 'ok', unchanged: true, etag };
-  }
+    const dbPath = join(found.appData, 'conversations', `${conv}.db`);
+    const walPath = `${dbPath}-wal`;
+    const sig = `${st.mtimeMs}:${st.size}|${statSig(dbPath)}|${statSig(walPath)}`;
+    const etag = `${conv}|${sig}`;
+    if (data.etag && data.etag === etag) {
+      return { conversationId: conv, status: 'ok', unchanged: true, etag };
+    }
 
-  const parsed = parseTranscript(found.filePath, dbPath, sig);
-  if (!parsed || parsed.steps.length === 0) {
-    return { conversationId: conv, status: 'waiting', etag };
-  }
+    const parsed = parseTranscript(found.filePath, dbPath, sig);
+    if (!parsed || parsed.steps.length === 0) {
+      return { conversationId: conv, status: 'waiting', etag };
+    }
 
-  return {
-    conversationId: conv,
-    status: 'ok',
-    etag,
-    summary: parsed.summary,
-    models: parsed.models,
-    steps: parsed.steps,
-  };
-}, 'GET');
+    return {
+      conversationId: conv,
+      status: 'ok',
+      etag,
+      summary: parsed.summary,
+      models: parsed.models,
+      steps: parsed.steps,
+      context: parsed.context,
+      tools: parsed.tools,
+    };
+  }, 'GET');
 
-app.run();
+  app.run();
+}
+
+export { readDbData, parseTranscript };
+
+if (!process.env.CACHE_MONITOR_NO_RUN) {
+  startServer();
+}

@@ -6,8 +6,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; frame-src 'none'; child-src 'none'">
   <title>Cache Monitor</title>
   <script src="/preload.js"></script>
-  <link rel="stylesheet" href="/styles.css?v=7">
-  <script defer src="/app.js?v=7"></script>
+  <link rel="stylesheet" href="/styles.css?v=8">
+  <script defer src="/app.js?v=8"></script>
 </head>
 <body>
   <div id="app" class="shell">
@@ -95,12 +95,33 @@
         </article>
       </section>
 
+      <section id="context-card" class="panel-card context-card hidden" aria-label="Context window">
+        <div class="context-head">
+          <button id="btn-context-toggle" type="button" class="context-toggle" aria-expanded="false" aria-controls="context-breakdown">
+            <span class="panel-title" id="context-label">Context Window</span>
+            <span class="context-chevron" id="context-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="context-nums">
+            <span id="context-compact-badge" class="kpi-badge compact-ev hidden"></span>
+            <span id="context-usage" class="mono muted">-- / --</span>
+            <span id="context-pct-badge" class="kpi-badge">--</span>
+          </div>
+        </div>
+        <div id="context-bar" class="ctx-bar-track" aria-hidden="true"></div>
+        <div id="context-legend" class="ctx-legend"></div>
+        <div id="context-breakdown" class="ctx-breakdown hidden">
+          <div id="context-cat-pills" class="ctx-cat-pills" role="tablist" aria-label="Context category"></div>
+          <div id="context-items" class="ctx-items"></div>
+        </div>
+      </section>
+
       <section id="trend-card" class="panel-card">
         <div class="panel-head">
           <div id="metric-switch" class="metric-switch" role="tablist" aria-label="Trend metric">
             <button type="button" class="metric-btn active" role="tab" aria-selected="true" data-metric="hit" id="metric-hit">Hit Rate</button>
             <button type="button" class="metric-btn" role="tab" aria-selected="false" data-metric="ttft" id="metric-ttft">TTFT</button>
             <button type="button" class="metric-btn" role="tab" aria-selected="false" data-metric="tps" id="metric-tps">tok/s</button>
+            <button type="button" class="metric-btn hidden" role="tab" aria-selected="false" data-metric="ctx" id="metric-ctx">Ctx</button>
           </div>
           <span class="panel-meta" id="trend-meta">80% · 50% ref</span>
         </div>
@@ -114,6 +135,7 @@
         <div id="tabs-bar" class="tabs-bar" role="tablist" aria-label="Detail views">
           <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="steps" id="tab-steps">Steps (0)</button>
           <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="models" id="tab-models">By Model (0)</button>
+          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="tools" id="tab-tools">Tools (0)</button>
         </div>
         <div id="detail-body" class="detail-body"></div>
       </section>

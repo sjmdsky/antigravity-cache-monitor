@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-11-21
+
+### Added
+- **Context Window Dashboard & Composition Breakdown**: Reads `gen_metadata` (`f1.f9.f10`) to display live context usage vs. model window limit, a stacked category bar (`System Prompt`, `Tools`, `Chat History`, `MCP Tools`, `Skills`, `Plugins`, `Subagents`), and a collapsible top-item token breakdown with category filter pills (`localStorage`-persisted).
+- **Context Compaction & API Retry Annotations**: Detects context compaction checkpoints and API retries / stream interruptions from `gen_metadata` (`f9.f1`, `f10.f2`, `f14`, `f17`), rendering chart markers (`✂` / `↻`), tooltip deltas & error summaries, and inline tags in the Steps table.
+- **Tool Execution Latency & Failure Analytics**: Parses `steps` (`step_type = 132`) to aggregate per-tool call counts, failure rates (`status = 4/7` or `error_details`), and nanosecond-precision durations (`Total`, `Avg`, `P50`, `Max`), plus a deduplicated wall-clock **Model vs. Tools** time split bar in a new **Tools** tab.
+- **4th Chart Metric (`Ctx`)**: Tracks per-step context window growth alongside `Hit Rate`, `TTFT`, and `tok/s`, with 75% / 100% window reference lines.
+
+### Changed
+- **Historical Model Backfill**: Falls back to `gen_metadata` model slug/display name when older (`< 2026-11-20`) `transcript.jsonl` entries lack a `model` field, eliminating `unknown` labels and enabling accurate per-model cold-start detection.
+- **Fast Zero-Copy Protobuf Traversal**: Skips large prompt/history fields in `gen_metadata` so parsing multi-megabyte SQLite WAL databases completes in milliseconds while preserving `.pb` and Node `< 22.5` graceful degradation.
+
 ## [1.2.0] - 2026-11-21
 
 ### Added

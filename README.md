@@ -1,10 +1,10 @@
 <div align="center">
   <img src="./assets/logo.svg" alt="Cache Monitor" width="88" height="88" />
   <h1>Cache Monitor</h1>
-  <p><strong>Real-time prompt cache &amp; inference performance monitor for the Antigravity App side panel</strong></p>
-  <p>Live prompt cache hit rate · Millisecond TTFT · E2E / Decode throughput</p>
+  <p><strong>Real-time prompt cache, context window, tool latency &amp; inference monitor for the Antigravity App side panel</strong></p>
+  <p>Prompt cache hit rate · Millisecond TTFT · E2E / Decode tok/s · Context breakdown · Tool analytics</p>
   <p>
-    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.2.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.2.0" /></a>
+    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.3.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.3.0" /></a>
     <img src="https://img.shields.io/badge/platform-Antigravity%20App-A6E3A1?style=flat-square&labelColor=181825" alt="Platform Antigravity App" />
     <img src="https://img.shields.io/badge/node-%3E%3D%2022.5-A6E3A1?style=flat-square&labelColor=181825" alt="Node.js >= 22.5" />
     <img src="https://img.shields.io/badge/dependencies-0-89DCEB?style=flat-square&labelColor=181825" alt="Zero Dependencies" />
@@ -44,14 +44,24 @@
       Defaults to <code>E2E tok/s</code> for true end-to-end perceived speed; one-click switch to pure <code>Decode tok/s</code> with <code>&lt; 500ms</code> single-packet <code>burst</code> protection, persisted automatically.
     </td>
     <td width="50%" valign="top">
-      <strong>Interactive 3-Metric Trend Chart</strong><br />
-      Inline SVG chart switching between Hit Rate, TTFT, and tok/s (auto-focusing the latest 48 steps) with rich hover tooltips for token breakdowns and timings.
+      <strong>Interactive 4-Metric Trend Chart</strong><br />
+      Inline SVG chart switching between Hit Rate, TTFT, tok/s, and Context Usage (auto-focusing the latest 48 steps), annotated with <code>✂</code> compaction &amp; <code>↻</code> API retry markers and rich tooltips.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Context Window &amp; Breakdown</strong><br />
+      Tracks live context usage vs. model window limit with a stacked category bar (<code>System Prompt</code>, <code>Tools</code>, <code>Chat History</code>, etc.) and collapsible top-item token breakdown.
+    </td>
+    <td width="50%" valign="top">
+      <strong>Tool Latency &amp; Failure Analytics</strong><br />
+      Parses nanosecond tool execution steps to show a deduplicated wall-clock <code>Model vs. Tools</code> split alongside per-tool call counts, failure rates, and <code>Total / Avg / Max</code> timings.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <strong>Zero Dependencies · Ultra-Low Overhead</strong><br />
-      Powered by Node.js built-in <code>node:sqlite</code> and a zero-dependency Protobuf Wire decoder; WAL-aware combined ETag plus auto-pause polling when hidden.
+      Powered by Node.js built-in <code>node:sqlite</code> and a zero-dependency Protobuf Wire decoder; skips multi-MB prompt blobs, uses WAL-aware combined ETag, and auto-pauses when hidden.
     </td>
     <td width="50%" valign="top">
       <strong>Native Light &amp; Dark Theme Sync</strong><br />
@@ -104,6 +114,8 @@ git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemin
 | **TTFT (Time to First Token)** | `first_token_at - created_at` (nanosecond timestamps from `conversations/<convId>.db`, millisecond precision) | Headline shows latest TTFT and step delta; subtext shows session **P50 / P95** (hover for mean) |
 | **E2E tok/s (Default)** | `output_tokens / (completed_at - created_at)` (includes TTFT in denominator; total duration `≥ 100ms`) | Reflects true end-to-end perceived throughput; switchable across cards, chart, and tables |
 | **Decode tok/s** | `output_tokens / (completed_at - first_token_at)` (pure streaming decode speed; stream duration `≥ 500ms`) | Measures pure token generation speed after first token; short packets are flagged `burst` |
+| **Context Window** | `gen_metadata.f1.f9.f10` (`contextTokens / contextLimit` + latest `breakdown`) | Tracks live context utilization, compaction count (`✂`), and per-category / per-item token breakdown |
+| **Tool Execution** | `steps` (`step_type = 132` timestamps, `status`, `error_details`) | Aggregates per-tool calls, failure rate (`status = 4/7`), `Total / Avg / P50 / Max`, and deduplicated wall time |
 
 ### Color Tiers
 
@@ -113,6 +125,7 @@ git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemin
 | **TTFT** | `< 5s` | `5s ~ 10s` | `10s ~ 20s` | `≥ 20s` | `--` |
 | **E2E tok/s** | `≥ 80` | `40 ~ 79` | `15 ~ 39` | `< 15` | `--` |
 | **Decode tok/s** | `≥ 120` | `60 ~ 119` | `30 ~ 59` | `< 30` | `burst` (`< 500ms`) |
+| **Context Usage** | `< 50%` | `50% ~ 74%` | `75% ~ 89%` | `≥ 90%` | `✂` (compacted) |
 
 ### Key Classification Rules
 
@@ -126,23 +139,25 @@ git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemin
 | :--- | :--- |
 | **Top Bar** | Displays the active model pill, **Language (`中文 / EN`)** toggle button (English by default, one-click switch to Simplified Chinese), **Compact** toggle button (collapses the chart and detail tabs to keep only the 2×2 KPI cards), and `Live / Paused / Reconnecting` polling status. |
 | **2×2 KPI Grid** | Top row tracks Step and Σ Session cache hit rates; bottom row tracks TTFT and the `E2E / Decode` tok/s switcher. |
-| **3-Metric Trend Chart** | Switches between Hit Rate, TTFT, and tok/s (auto-focusing the latest 48 steps); hover tooltip shows hit rate, TTFT, both E2E and Decode tok/s, `thinking / response` token split, and model/tool duration details. |
-| **Steps Table** | Reverse-chronological per-step breakdown: `Step \| Hit \| TTFT \| tok/s \| Read / New \| Out \| Dur \| Model \| Time`. |
+| **Context Window Card** | Stacked progress bar (`System Prompt`, `Tools`, `Chat History`, etc.) with compaction badge and collapsible top-item breakdown filtered by category. |
+| **4-Metric Trend Chart** | Switches between Hit Rate, TTFT, tok/s, and Ctx (auto-focusing the latest 48 steps), annotated with `✂` compaction and `↻` retry markers; hover tooltip adds context usage, compaction savings, and retry/interruption errors. |
+| **Steps Table** | Reverse-chronological per-step breakdown: `Step \| Hit \| TTFT \| tok/s \| Read / New \| Out \| Dur \| Model \| Time`, with inline `✂` / `↻` tags. |
 | **By Model Table** | Per-model summary table: `Model \| Steps \| Hit Rate \| P50 TTFT \| tok/s \| Hit / Total \| Out \| Time`. |
+| **Tools Table** | Wall-clock `Model vs. Tools` time split bar plus per-tool analytics: `Tool \| Calls \| Fail \| Total \| Avg \| Max`. |
 
-> Language preference, compact mode state, active chart metric, and `E2E / Decode` speed mode are automatically persisted in `localStorage` across reloads and conversation switches.
+> Language preference, compact mode state, context breakdown expand state, active chart metric, and `E2E / Decode` speed mode are automatically persisted in `localStorage` across reloads and conversation switches.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   A["transcript.jsonl (Token / Step Logs)"] --> C["Sidecar Backend (main.mjs)"]
-  B["conversations/{convId}.db (SQLite WAL)"] --> C
+  B["conversations/{convId}.db (steps + gen_metadata)"] --> C
   C -->|"Read-only Parse · Protobuf Decode · Combined ETag"| D["GET /api/cache"]
-  D -->|"1.5s Smart Poll (Skip Unchanged / Auto-Pause)"| E["Sidecar UI (2×2 KPIs · SVG Chart · Detail Tables)"]
+  D -->|"1.5s Smart Poll (Skip Unchanged / Auto-Pause)"| E["Sidecar UI (KPIs · Context · SVG Chart · 3 Tabs)"]
 ```
 
-- **Dual-Source Read-Only Collection**: Combines `<appData>/brain/<convId>/.system_generated/logs/transcript.jsonl` with read-only SQLite WAL `<appData>/conversations/<convId>.db` (reading only lightweight `metadata` Protobufs from `steps` rows with `step_type = 15`), backed by a built-in zero-dependency Protobuf Wire decoder that also fills exact durations for plain-text final steps. Strictly read-only, strict CSP, zero external network requests.
+- **Dual-Source Read-Only Collection**: Combines `<appData>/brain/<convId>/.system_generated/logs/transcript.jsonl` with read-only SQLite WAL `<appData>/conversations/<convId>.db` (`steps` with `step_type = 15` & `132`, plus `gen_metadata`), backed by a built-in zero-dependency Protobuf Wire decoder that skips large prompt blobs for millisecond-level parsing. Strictly read-only, strict CSP, zero external network requests.
 - **WAL-Aware Combined ETag & Smart Polling**: Computes a combined ETag from the `mtime/size` of `transcript.jsonl + .db + .db-wal`. When unchanged, 1.5s frontend polls receive `unchanged: true` with zero re-rendering, and polling pauses automatically whenever the tab is hidden.
 
 <details>
@@ -192,5 +207,5 @@ No. Once pinned via **Pin Tab** in the right sidebar, the panel automatically tr
 
 ## Changelog and License
 
-- **Changelog**: See [CHANGELOG.md](./CHANGELOG.md) (latest release: `v1.2.0`)
+- **Changelog**: See [CHANGELOG.md](./CHANGELOG.md) (latest release: `v1.3.0`)
 - **License**: [MIT License](./LICENSE)
