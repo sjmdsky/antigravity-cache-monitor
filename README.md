@@ -1,63 +1,196 @@
-# Cache Monitor (`v1.1.0`)
+<div align="center">
+  <img src="./assets/logo.svg" alt="Cache Monitor" width="88" height="88" />
+  <h1>Cache Monitor</h1>
+  <p><strong>Real-time prompt cache &amp; inference performance monitor for the Antigravity App side panel</strong></p>
+  <p>Live prompt cache hit rate · Millisecond TTFT · E2E / Decode throughput</p>
+  <p>
+    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.1.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.1.0" /></a>
+    <img src="https://img.shields.io/badge/platform-Antigravity%20App-A6E3A1?style=flat-square&labelColor=181825" alt="Platform Antigravity App" />
+    <img src="https://img.shields.io/badge/node-%3E%3D%2022.5-A6E3A1?style=flat-square&labelColor=181825" alt="Node.js >= 22.5" />
+    <img src="https://img.shields.io/badge/dependencies-0-89DCEB?style=flat-square&labelColor=181825" alt="Zero Dependencies" />
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-CBA6F7?style=flat-square&labelColor=181825" alt="License MIT" /></a>
+  </p>
+  <p>
+    <strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a>
+  </p>
+  <p>
+    <a href="#features">Features</a> ·
+    <a href="#quick-start">Quick Start</a> ·
+    <a href="#core-metrics">Core Metrics</a> ·
+    <a href="#ui-overview">UI Overview</a> ·
+    <a href="#architecture">Architecture</a> ·
+    <a href="#faq">FAQ</a>
+  </p>
+</div>
 
-Antigravity App 侧边栏实时缓存与推理性能监控插件（Sidecar UI），实时展示当前会话的提示词缓存命中率、**TTFT（首字延迟）**与 **E2E / Decode tok/s（生成速率）**。
+---
 
-## 安装方式
+## Features
 
-### 环境要求
-- Antigravity App（桌面端）
-- Node.js `>= 22.5`（使用内置 `node:sqlite` 读取只读数据库，零外部 npm 依赖；若运行时不支持 `node:sqlite` 或遇到旧版无 `.db` 的会话，将自动优雅降级为纯缓存命中率监控）
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Dual-Scope Cache Insights</strong><br />
+      Live per-step (<code>Step</code>) and cumulative (<code>Σ Session</code>) prompt cache hit rates with step-over-step deltas; per-model cold-start detection prevents false <code>⚠ Miss</code> alerts.
+    </td>
+    <td width="50%" valign="top">
+      <strong>Millisecond TTFT</strong><br />
+      Reads nanosecond timestamps from the read-only SQLite WAL database to display latest step TTFT, step delta, and session <code>P50 / P95</code> (hover for mean) resistant to long-tail spikes.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>E2E / Decode Throughput</strong><br />
+      Defaults to <code>E2E tok/s</code> for true end-to-end perceived speed; one-click switch to pure <code>Decode tok/s</code> with <code>&lt; 500ms</code> single-packet <code>burst</code> protection, persisted automatically.
+    </td>
+    <td width="50%" valign="top">
+      <strong>Interactive 3-Metric Trend Chart</strong><br />
+      Inline SVG chart switching between Hit Rate, TTFT, and tok/s (auto-focusing the latest 48 steps) with rich hover tooltips for token breakdowns and timings.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Zero Dependencies · Ultra-Low Overhead</strong><br />
+      Powered by Node.js built-in <code>node:sqlite</code> and a zero-dependency Protobuf Wire decoder; WAL-aware combined ETag plus auto-pause polling when hidden.
+    </td>
+    <td width="50%" valign="top">
+      <strong>Native Light &amp; Dark Theme Sync</strong><br />
+      Watches host <code>--background</code> luminance automatically, with compact mode and right-sidebar <code>Pin Tab</code> support that follows active conversations.
+    </td>
+  </tr>
+</table>
 
-### 克隆到插件目录
+## Quick Start
 
-**macOS / Linux：**
+### Prerequisites
+
+| Requirement | Details |
+| :--- | :--- |
+| **Antigravity App** | Desktop host application (with Sidecar auxiliary pane plugin support) |
+| **Node.js `>= 22.5`** | Provides built-in `node:sqlite` for read-only DB parsing with zero external npm dependencies |
+
+> [!NOTE]
+> If the runtime lacks `node:sqlite` or opens a legacy conversation without a `.db` file, the monitor gracefully degrades to cache-hit-rate-only mode with zero configuration.
+
+### Clone into the Plugins Directory
+
+**macOS / Linux:**
 ```bash
 git clone https://github.com/sjmdsky/antigravity-cache-monitor.git ~/.gemini/config/plugins/cache-monitor
 ```
 
-**Windows (PowerShell)：**
+**Windows (PowerShell):**
 ```powershell
 git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemini\config\plugins\cache-monitor"
 ```
 
-### 启用与打开
-1. 在 Antigravity App 的 **Customizations / Plugins** 中确认启用 **Cache Monitor**（如已开启，更新代码后请关闭再重新打开一次以重载 Sidecar）。
-2. 在对话右上角 **Overview → Extensions → Cache Monitor** 打开，或点击右侧边栏 **+** 选择 **Cache Monitor**。
-3. 在标签页上右键选择 **Pin Tab** 即可常驻右侧边栏，切换对话时自动跟随当前会话。
+### Enable and Pin
 
-## 核心指标与颜色分级
+1. Confirm **Cache Monitor** is enabled under **Customizations / Plugins** in Antigravity App.
+2. Open it from **Overview → Extensions → Cache Monitor** in the top-right corner of a conversation, or click **+** in the right sidebar and select **Cache Monitor**.
+3. Right-click the tab and choose **Pin Tab** to keep it docked in the right sidebar—it automatically follows whichever conversation is active.
 
-### 1. 缓存命中率（Step & Σ Session）
-- **单步命中率（Step）**：最近一次模型调用的 `cache_read_tokens / (input_tokens + cache_read_tokens + cache_creation_tokens)`，并显示与上一步的涨跌对比。
-- **按模型冷启动判定（`cold`）**：每个模型在当前会话中**首次出现且 `cache_read_tokens == 0`** 时均视为冷启动（区分 **首步冷启动** 与 **切模型冷启动**，如 Plan/Execute 或 Orchestrator 协作切换到新模型），不再误报为 `⚠ Miss`；同一模型后续调用若再次掉到 `0%` 才触发 `⚠ Miss`。
-- **累计命中率（Σ Session）**：整场会话所有 `PLANNER_RESPONSE` 步骤累计缓存读取占比与总步数。
-- **颜色分级**：`≥ 80%` 绿 · `50% ~ 79%` 黄 · `20% ~ 49%` 橙 · `< 20%` 红 · 冷启动灰 (`cold`)。
+> [!TIP]
+> To update later, run `git pull` inside the plugin directory, then disable and re-enable **Cache Monitor** under **Customizations / Plugins** to reload the Sidecar.
 
-### 2. TTFT（首字延迟）
-- 读取会话只读 SQLite WAL (`conversations/<convId>.db`) 中每步 `first_token_at - created_at` 纳秒级时间戳，精度毫秒级。
-- 卡片主值显示最新步 TTFT 与上一步差值，副文展示整场会话的 **P50 / P95**（悬停显示均值），避免长尾排队拉偏观感。
-- **颜色分级**：`< 5s` 绿 · `5s ~ 10s` 黄 · `10s ~ 20s` 橙 · `≥ 20s` 红。
+## Core Metrics
 
-### 3. 速率（E2E / Decode tok/s，默认 E2E）
-- 支持在速率卡片左上角切换 **E2E** 与 **Decode** 口径（状态持久化于 `localStorage`，同步联动卡片、趋势图与两张明细表）：
-  - **E2E tok/s（默认）**：`output_tokens / (completed_at - created_at)`，将首字等待（TTFT）也计入分母，反映单步端到端真实体感吞吐；色阶为 `≥ 80` 绿 · `40 ~ 79` 黄 · `15 ~ 39` 橙 · `< 15` 红。
-  - **Decode tok/s**：`output_tokens / (completed_at - first_token_at)`，纯解码吐字速率；流式时长 `< 500ms` 的单包返回标记为 `burst`（灰色）并从加权平均中排除，避免短包产生虚假尖峰；色阶为 `≥ 120` 绿 · `60 ~ 119` 黄 · `30 ~ 59` 橙 · `< 30` 红 · `burst` 灰。
-- 会话与模型汇总均采用**加权平均**（有效步总输出 ÷ 有效步总耗时）。
+### Metric Definitions
 
-## 视图与交互
+| Metric | Formula / Data Source | Display & Aggregation |
+| :--- | :--- | :--- |
+| **Step Hit Rate (`Step`)** | `cache_read_tokens / (input_tokens + cache_read_tokens + cache_creation_tokens)` | Displays the latest model call's cache hit rate and delta vs. the previous step |
+| **Session Hit Rate (`Σ Session`)** | Cumulative `cache_read_tokens` ratio across all `PLANNER_RESPONSE` steps | Shows overall prompt cache reuse efficiency and total step count for the session |
+| **TTFT (Time to First Token)** | `first_token_at - created_at` (nanosecond timestamps from `conversations/<convId>.db`, millisecond precision) | Headline shows latest TTFT and step delta; subtext shows session **P50 / P95** (hover for mean) |
+| **E2E tok/s (Default)** | `output_tokens / (completed_at - created_at)` (includes TTFT in denominator; total duration `≥ 100ms`) | Reflects true end-to-end perceived throughput; switchable across cards, chart, and tables |
+| **Decode tok/s** | `output_tokens / (completed_at - first_token_at)` (pure streaming decode speed; stream duration `≥ 500ms`) | Measures pure token generation speed after first token; short packets are flagged `burst` |
 
-- **2×2 核心指标卡**：上方缓存（单步 + 累计），下方性能（TTFT + E2E/Decode tok/s 切换）。
-- **紧凑模式**：点击右上角 **紧凑** 按钮可折叠趋势图与明细，仅保留顶部 2×2 四张核心指标卡片。
-- **三指标趋势图**：支持在 **命中率 / TTFT / tok/s** 间切换（超 48 步自动聚焦最近 48 步），悬停同时显示命中率、TTFT、E2E 与 Decode tok/s、思考/回复 token 拆分及耗时细节。
-- **双 Tab 明细**：
-  - **步骤明细**：列顺序为 `步 | 命中 | TTFT | tok/s | 读 / 新增 | 输出 | 用时 | 模型 | 时间`。
-  - **按模型汇总**：按模型聚合展示步数、命中率、P50 TTFT、当前口径 tok/s、输入输出 token 与总用时。
+### Color Tiers
 
-## 原理与数据源
+| Metric | 🟢 Good | 🟡 Fair | 🟠 Low / Slow | 🔴 Alert | ⚪ Special |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Cache Hit Rate** | `≥ 80%` | `50% ~ 79%` | `20% ~ 49%` | `< 20%` | `cold` (cold start) |
+| **TTFT** | `< 5s` | `5s ~ 10s` | `10s ~ 20s` | `≥ 20s` | `--` |
+| **E2E tok/s** | `≥ 80` | `40 ~ 79` | `15 ~ 39` | `< 15` | `--` |
+| **Decode tok/s** | `≥ 120` | `60 ~ 119` | `30 ~ 59` | `< 30` | `burst` (`< 500ms`) |
 
-- **双源只读采集**：结合 `<appData>/brain/<convId>/.system_generated/logs/transcript.jsonl` 与只读 SQLite WAL `<appData>/conversations/<convId>.db`（仅读取 `steps` 表 `step_type = 15` 的 `metadata` 轻量 Protobuf），并内置零依赖 Protobuf Wire 解码器，同时补全纯文本尾步的精确耗时。
-- **WAL 感知 ETag**：基于 `transcript.jsonl + .db + .db-wal` 的联合 mtime/size 生成 ETag，无变化时前端 1.5 秒轮询直接返回 `unchanged: true`，开销极低。
+### Key Classification Rules
 
-## License
+- **Per-Model Cold Start (`cold` vs `⚠ Miss`)**: The first occurrence of each model in a conversation with `cache_read_tokens == 0` is labeled `cold` (distinguishing **first-step cold start** from **model-switch cold start** in Plan/Execute or Orchestrator workflows) rather than raising a false `⚠ Miss`. A `⚠ Miss` alert only triggers if the same model subsequently drops back to `0%`.
+- **Short-Packet `burst` Protection**: Under `Decode` mode, single-packet or ultra-short responses with streaming duration `< 500ms` are marked `burst` (gray) and excluded from weighted averages to avoid artificial speed spikes.
+- **Weighted Average Aggregation**: Both session and per-model `tok/s` use weighted averages (`total valid output tokens ÷ total valid duration`) so short turns do not skew overall throughput. Switching between `E2E` and `Decode` persists in `localStorage` and synchronizes the KPI card, trend chart, and both detail tables.
 
-[MIT](./LICENSE)
+## UI Overview
+
+| UI Region | Capabilities & Interactions |
+| :--- | :--- |
+| **Top Bar** | Displays the active model pill, **Compact (`紧凑`)** toggle button (collapses the chart and detail tabs to keep only the 2×2 KPI cards), and `Live / Paused / Reconnecting` polling status. |
+| **2×2 KPI Grid** | Top row tracks Step and Σ Session cache hit rates; bottom row tracks TTFT and the `E2E / Decode` tok/s switcher. |
+| **3-Metric Trend Chart** | Switches between Hit Rate, TTFT, and tok/s (auto-focusing the latest 48 steps); hover tooltip shows hit rate, TTFT, both E2E and Decode tok/s, `thinking / response` token split, and model/tool duration details. |
+| **Steps Table (`步骤明细`)** | Reverse-chronological per-step breakdown: `Step \| Hit \| TTFT \| tok/s \| Read / New \| Output \| Duration \| Model \| Time` (UI headers: `步 \| 命中 \| TTFT \| tok/s \| 读 / 新增 \| 输出 \| 用时 \| 模型 \| 时间`). |
+| **By Model Table (`按模型汇总`)** | Per-model summary table: `Model \| Steps \| Hit Rate \| P50 TTFT \| tok/s \| Hit / Total Input \| Output \| Total Duration`. |
+
+> Compact mode state, active chart metric, and `E2E / Decode` speed mode are automatically persisted in `localStorage` across reloads and conversation switches.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  A["transcript.jsonl (Token / Step Logs)"] --> C["Sidecar Backend (main.mjs)"]
+  B["conversations/{convId}.db (SQLite WAL)"] --> C
+  C -->|"Read-only Parse · Protobuf Decode · Combined ETag"| D["GET /api/cache"]
+  D -->|"1.5s Smart Poll (Skip Unchanged / Auto-Pause)"| E["Sidecar UI (2×2 KPIs · SVG Chart · Detail Tables)"]
+```
+
+- **Dual-Source Read-Only Collection**: Combines `<appData>/brain/<convId>/.system_generated/logs/transcript.jsonl` with read-only SQLite WAL `<appData>/conversations/<convId>.db` (reading only lightweight `metadata` Protobufs from `steps` rows with `step_type = 15`), backed by a built-in zero-dependency Protobuf Wire decoder that also fills exact durations for plain-text final steps. Strictly read-only, strict CSP, zero external network requests.
+- **WAL-Aware Combined ETag & Smart Polling**: Computes a combined ETag from the `mtime/size` of `transcript.jsonl + .db + .db-wal`. When unchanged, 1.5s frontend polls receive `unchanged: true` with zero re-rendering, and polling pauses automatically whenever the tab is hidden.
+
+<details>
+<summary>Project Structure</summary>
+
+```text
+cache-monitor/
+├── plugin.json                  # Antigravity plugin metadata and icon config
+├── assets/
+│   └── logo.svg                 # Plugin icon
+├── sidecars/
+│   └── cache_monitor/
+│       ├── sidecar.json         # Sidecar process and AUX_PANE entrypoint config
+│       ├── package.json         # ESM module manifest (zero external dependencies)
+│       ├── main.mjs             # Read-only dual-source parser, Protobuf decoder & /api/cache
+│       ├── index.html           # Strict-CSP dashboard markup
+│       ├── app.js               # Polling, 2×2 KPIs, SVG trend chart & detail tables
+│       └── styles.css           # Adaptive host light/dark theme & compact styles
+├── CHANGELOG.md                 # Release history
+└── LICENSE                      # MIT License
+```
+
+</details>
+
+## FAQ
+
+<details>
+<summary>Why did the UI not update after pulling the latest changes?</summary>
+
+Disable **Cache Monitor** and re-enable it under **Customizations / Plugins** in Antigravity App to reload the Sidecar backend process and static frontend assets.
+
+</details>
+
+<details>
+<summary>Why do I only see cache hit rates without TTFT or tok/s?</summary>
+
+Ensure your Node.js runtime is `>= 22.5` (which provides built-in `node:sqlite`) and that the active conversation has a `.db` file. Otherwise, the plugin gracefully degrades to cache-hit-rate-only monitoring.
+
+</details>
+
+<details>
+<summary>Do I need to refresh when switching conversations or themes?</summary>
+
+No. Once pinned via **Pin Tab** in the right sidebar, the panel automatically tracks the active conversation ID, and a `MutationObserver` continuously syncs light/dark colors from the host `--background` CSS variable.
+
+</details>
+
+## Changelog and License
+
+- **Changelog**: See [CHANGELOG.md](./CHANGELOG.md) (latest release: `v1.1.0`)
+- **License**: [MIT License](./LICENSE)
