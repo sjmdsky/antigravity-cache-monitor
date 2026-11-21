@@ -14,6 +14,7 @@
     <strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a>
   </p>
   <p>
+    <a href="#screenshots">Screenshots</a> ·
     <a href="#features">Features</a> ·
     <a href="#quick-start">Quick Start</a> ·
     <a href="#core-metrics">Core Metrics</a> ·
@@ -24,6 +25,28 @@
 </div>
 
 ---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="33%" valign="top" align="center">
+      <strong>Dark Theme · Overview &amp; Context Breakdown</strong><br />
+      <img src="./assets/screenshots/overview-dark.png" alt="Cache Monitor Dark Theme Overview" width="270" /><br />
+      <sub>2×2 KPIs, expanded token breakdown, Hit Rate chart with <code>✂</code> / <code>↻</code> markers &amp; Steps table</sub>
+    </td>
+    <td width="33%" valign="top" align="center">
+      <strong>Context Trend (<code>Ctx</code>) &amp; Tool Analytics</strong><br />
+      <img src="./assets/screenshots/tools-dark.png" alt="Cache Monitor Context Trend and Tools Tab" width="270" /><br />
+      <sub>Context growth &amp; compaction cliff + Model vs. Tools wall-time split &amp; per-tool latency</sub>
+    </td>
+    <td width="33%" valign="top" align="center">
+      <strong>Light Theme · Chinese UI &amp; Model Summary</strong><br />
+      <img src="./assets/screenshots/overview-light-zh.png" alt="Cache Monitor Light Theme Chinese UI" width="270" /><br />
+      <sub>Auto light-theme sync, one-click <code>中文 / EN</code> switch, TTFT trend &amp; By Model table</sub>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
@@ -167,7 +190,8 @@ flowchart LR
 cache-monitor/
 ├── plugin.json                  # Antigravity plugin metadata and icon config
 ├── assets/
-│   └── logo.svg                 # Plugin icon
+│   ├── logo.svg                 # Plugin icon
+│   └── screenshots/             # README showcase screenshots (dark / tools / light-zh)
 ├── sidecars/
 │   └── cache_monitor/
 │       ├── sidecar.json         # Sidecar process and AUX_PANE entrypoint config
