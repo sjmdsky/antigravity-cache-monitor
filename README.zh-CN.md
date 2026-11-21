@@ -4,7 +4,7 @@
   <p><strong>Antigravity App 侧边栏实时提示词缓存与推理性能监控插件</strong></p>
   <p>实时追踪提示词缓存命中率 · 毫秒级 TTFT 首字延迟 · E2E / Decode 吞吐速率</p>
   <p>
-    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.1.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.1.0" /></a>
+    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.2.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.2.0" /></a>
     <img src="https://img.shields.io/badge/platform-Antigravity%20App-A6E3A1?style=flat-square&labelColor=181825" alt="Platform Antigravity App" />
     <img src="https://img.shields.io/badge/node-%3E%3D%2022.5-A6E3A1?style=flat-square&labelColor=181825" alt="Node.js >= 22.5" />
     <img src="https://img.shields.io/badge/dependencies-0-89DCEB?style=flat-square&labelColor=181825" alt="Zero Dependencies" />
@@ -192,5 +192,5 @@ cache-monitor/
 
 ## 更新日志与开源协议
 
-- **更新日志**：查看 [CHANGELOG.md](./CHANGELOG.md)（当前最新版本 `v1.1.0`）
+- **更新日志**：查看 [CHANGELOG.md](./CHANGELOG.md)（当前最新版本 `v1.2.0`）
 - **开源协议**：[MIT License](./LICENSE)

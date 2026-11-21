@@ -4,7 +4,7 @@
   <p><strong>Real-time prompt cache &amp; inference performance monitor for the Antigravity App side panel</strong></p>
   <p>Live prompt cache hit rate · Millisecond TTFT · E2E / Decode throughput</p>
   <p>
-    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.1.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.1.0" /></a>
+    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.2.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.2.0" /></a>
     <img src="https://img.shields.io/badge/platform-Antigravity%20App-A6E3A1?style=flat-square&labelColor=181825" alt="Platform Antigravity App" />
     <img src="https://img.shields.io/badge/node-%3E%3D%2022.5-A6E3A1?style=flat-square&labelColor=181825" alt="Node.js >= 22.5" />
     <img src="https://img.shields.io/badge/dependencies-0-89DCEB?style=flat-square&labelColor=181825" alt="Zero Dependencies" />
@@ -192,5 +192,5 @@ No. Once pinned via **Pin Tab** in the right sidebar, the panel automatically tr
 
 ## Changelog and License
 
-- **Changelog**: See [CHANGELOG.md](./CHANGELOG.md) (latest release: `v1.1.0`)
+- **Changelog**: See [CHANGELOG.md](./CHANGELOG.md) (latest release: `v1.2.0`)
 - **License**: [MIT License](./LICENSE)

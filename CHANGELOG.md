@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-11-21
+
+### Added
+- **中英文双语 UI（默认英文）**：Sidecar 监控面板默认展示英文界面，并在顶栏右侧新增 `中文 / EN` 一键切换按钮（偏好持久化于 `localStorage`），全量覆盖空状态、2×2 KPI 卡片、三指标趋势图、悬停 Tooltip 与双 Tab 明细表（#2）。
+- **双语 README 文档**：默认提供英文版 `README.md` 并新增简体中文版 `README.zh-CN.md`，顶部支持一键互切（#1）。
+
+### Changed
+- **README 视觉与信息架构重构**：新增居中 Hero（含项目图标与同色系徽章）、2×3 特性网格、结构化快速开始与 GitHub Alert、核心指标与色阶统一矩阵、Mermaid 架构数据流图、可折叠目录树与 FAQ（#1）。
+
 ## [1.1.0] - 2026-11-21
 
 ### Added
