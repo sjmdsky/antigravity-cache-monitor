@@ -107,7 +107,7 @@ body {
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -120,6 +120,7 @@ body {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 6px;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
@@ -133,6 +134,12 @@ body {
   border-color: color-mix(in srgb, var(--cm-primary) 45%, var(--cm-border));
   color: var(--cm-fg);
   font-weight: 600;
+}
+
+.lang-btn {
+  min-width: 34px;
+  padding: 2px 6px;
+  text-align: center;
 }
 
 .live-pill {
