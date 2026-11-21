@@ -3,7 +3,7 @@
   "args": ["--no-warnings=ExperimentalWarning", "main.mjs"],
   "restart_policy": "always",
   "display_name": "Cache Monitor",
-  "description": "Live prompt cache hit rate, TTFT, and E2E/Decode tok/s monitor for the active conversation.",
+  "description": "Live prompt cache hit rate, TTFT, E2E/Decode tok/s, context window breakdown, compaction/retry annotations, and tool latency monitor for the active conversation.",
   "has_web_ui": true,
   "agent_permissions": {
     "allows_user_interactions": false
