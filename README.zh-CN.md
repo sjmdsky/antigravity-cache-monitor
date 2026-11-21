@@ -1,10 +1,10 @@
 <div align="center">
   <img src="./assets/logo.svg" alt="Cache Monitor" width="88" height="88" />
   <h1>Cache Monitor</h1>
-  <p><strong>Antigravity App 侧边栏实时提示词缓存与推理性能监控插件</strong></p>
-  <p>实时追踪提示词缓存命中率 · 毫秒级 TTFT 首字延迟 · E2E / Decode 吞吐速率</p>
+  <p><strong>Antigravity App 侧边栏实时提示词缓存、上下文窗口、工具耗时与推理性能监控插件</strong></p>
+  <p>提示词缓存命中率 · 毫秒级 TTFT 首字延迟 · E2E / Decode 吞吐 · 上下文拆解 · 工具耗时分析</p>
   <p>
-    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.2.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.2.0" /></a>
+    <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.3.0-89DCEB?style=flat-square&labelColor=181825" alt="Version v1.3.0" /></a>
     <img src="https://img.shields.io/badge/platform-Antigravity%20App-A6E3A1?style=flat-square&labelColor=181825" alt="Platform Antigravity App" />
     <img src="https://img.shields.io/badge/node-%3E%3D%2022.5-A6E3A1?style=flat-square&labelColor=181825" alt="Node.js >= 22.5" />
     <img src="https://img.shields.io/badge/dependencies-0-89DCEB?style=flat-square&labelColor=181825" alt="Zero Dependencies" />
@@ -44,14 +44,24 @@
       默认 <code>E2E tok/s</code> 反映端到端真实体感，一键切换纯解码 <code>Decode tok/s</code>（内置 <code>&lt; 500ms</code> 短包 <code>burst</code> 保护），状态自动持久化。
     </td>
     <td width="50%" valign="top">
-      <strong>三指标交互趋势图</strong><br />
-      内联 SVG 趋势图支持在 <code>命中率 / TTFT / tok/s</code> 间切换，超 48 步自动聚焦最近 48 步，悬停显示完整 Token 拆分与耗时细节。
+      <strong>四指标交互趋势图与事件标注</strong><br />
+      内联 SVG 趋势图支持在 <code>命中率 / TTFT / tok/s / 上下文</code> 间切换（超 48 步自动聚焦最近 48 步），叠加 <code>✂</code> 压缩与 <code>↻</code> 重试标注及详尽悬停 Tooltip。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>上下文窗口与构成拆解</strong><br />
+      实时展示当前上下文占用与上限比例、分类堆叠进度条（<code>系统提示词</code> / <code>工具定义</code> / <code>对话历史</code> 等），支持按分类展开查看 Top 条目 Token 消耗。
+    </td>
+    <td width="50%" valign="top">
+      <strong>工具耗时与失败率分析</strong><br />
+      解析纳秒级工具执行步骤，呈现去重墙钟时间口径的 <code>模型 vs 工具</code> 耗时拆分，以及按工具汇总的调用次数、失败率与 <code>总 / 均 / 最大</code> 耗时。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <strong>零依赖 · 极低开销</strong><br />
-      基于 Node.js 内置 <code>node:sqlite</code> 与内置轻量 Protobuf Wire 解码器，零外部 npm 依赖；WAL 感知 ETag + 后台不可见自动暂停轮询。
+      基于 Node.js 内置 <code>node:sqlite</code> 与零依赖 Protobuf Wire 解码器，跳过兆字节提示词大字段；WAL 感知联合 ETag + 后台不可见自动暂停轮询。
     </td>
     <td width="50%" valign="top">
       <strong>原生明暗外观融合</strong><br />
@@ -104,6 +114,8 @@ git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemin
 | **TTFT（首字延迟）** | `first_token_at - created_at`（源自 `conversations/<convId>.db` 纳秒时间戳，毫秒精度） | 主值显示最新步 TTFT 与上一步差值，副文展示会话 **P50 / P95**（悬停显示均值） |
 | **E2E tok/s（默认）** | `output_tokens / (completed_at - created_at)`（将 TTFT 计入分母，总耗时 `≥ 100ms`） | 反映单步端到端真实体感吞吐；卡片与明细均支持实时切换 |
 | **Decode tok/s** | `output_tokens / (completed_at - first_token_at)`（纯解码吐字速率，流式时长 `≥ 500ms`） | 剔除首字等待后的纯生成速度，短包返回自动标记为 `burst` |
+| **上下文窗口 (`Context`)** | `gen_metadata.f1.f9.f10`（`contextTokens / contextLimit` 与最新 `breakdown`） | 实时展示上下文窗口占比、压缩次数（`✂`）及分类/条目级 Token 构成拆解 |
+| **工具执行 (`Tools`)** | `steps`（`step_type = 132` 纳秒时间戳、`status`、`error_details`） | 按工具统计调用次数、失败率（`status = 4/7`）、`总 / 均 / P50 / 最大`耗时及去重墙钟耗时 |
 
 ### 颜色分级一览
 
@@ -113,6 +125,7 @@ git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemin
 | **TTFT** | `< 5s` | `5s ~ 10s` | `10s ~ 20s` | `≥ 20s` | `--` |
 | **E2E tok/s** | `≥ 80` | `40 ~ 79` | `15 ~ 39` | `< 15` | `--` |
 | **Decode tok/s** | `≥ 120` | `60 ~ 119` | `30 ~ 59` | `< 30` | `burst`（`< 500ms`） |
+| **上下文占用** | `< 50%` | `50% ~ 74%` | `75% ~ 89%` | `≥ 90%` | `✂`（触发压缩） |
 
 ### 关键判定规则
 
@@ -126,23 +139,25 @@ git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemin
 | :--- | :--- |
 | **顶栏控制区** | 展示当前活跃模型标签、**语言切换（`中文 / EN`）**按钮（默认英文界面，一键切换中文）、**紧凑**模式切换按钮（折叠趋势图与明细，仅保留 2×2 四张核心卡片）及 `Live / Paused / Reconnecting` 轮询状态指示。 |
 | **2×2 核心指标卡** | 上排展示单步与累计缓存命中率，下排展示 TTFT 与 `E2E / Decode` 速率切换。 |
-| **三指标趋势图** | 支持在 `命中率 / TTFT / tok/s` 间切换（超 48 步自动聚焦最近 48 步）；悬停 Tooltip 同时展示命中率、TTFT、E2E 与 Decode tok/s、`思考 / 回复` Token 拆分及模型/工具耗时细节。 |
-| **步骤明细（Tab 1）** | 按最新步倒序展示，列顺序为 `步 \| 命中 \| TTFT \| tok/s \| 读 / 新增 \| 输出 \| 用时 \| 模型 \| 时间`。 |
+| **上下文窗口卡片** | 展示分类堆叠进度条（`系统提示词`、`工具定义`、`对话历史` 等）与压缩徽章，可折叠展开查看分类过滤后的 Top 条目明细。 |
+| **四指标趋势图** | 支持在 `命中率 / TTFT / tok/s / 上下文` 间切换（超 48 步自动聚焦最近 48 步），叠加 `✂` 压缩与 `↻` 重试标线；悬停 Tooltip 额外展示上下文占用、压缩释放量与重试报错摘要。 |
+| **步骤明细（Tab 1）** | 按最新步倒序展示，列顺序为 `步 \| 命中 \| TTFT \| tok/s \| 读 / 新增 \| 输出 \| 用时 \| 模型 \| 时间`，并在步号旁内联标注 `✂` / `↻`。 |
 | **按模型汇总（Tab 2）** | 按模型聚合展示 `模型 \| 步数 \| 命中率 \| P50 TTFT \| tok/s \| 命中 / 总输入 \| 输出 \| 总用时`。 |
+| **工具分析（Tab 3）** | 展示墙钟口径的 `模型 vs 工具` 耗时拆分条，以及按工具聚合的 `工具 \| 次数 \| 失败 \| 总耗时 \| 均耗时 \| 最大`。 |
 
-> 语言偏好、紧凑模式状态、当前选中的趋势图指标以及 `E2E / Decode` 速率口径均自动持久化于 `localStorage`，切换或重载后保留偏好。
+> 语言偏好、紧凑模式状态、上下文明细展开状态、当前选中的趋势图指标以及 `E2E / Decode` 速率口径均自动持久化于 `localStorage`，切换或重载后保留偏好。
 
 ## 架构与原理
 
 ```mermaid
 flowchart LR
   A["transcript.jsonl (Token 与步骤日志)"] --> C["Sidecar 后端 (main.mjs)"]
-  B["conversations/{convId}.db (SQLite WAL)"] --> C
+  B["conversations/{convId}.db (steps + gen_metadata)"] --> C
   C -->|"只读解析 · Protobuf 解码 · 联合 ETag"| D["GET /api/cache"]
-  D -->|"1.5s 智能轮询 (unchanged 跳过 / 隐藏暂停)"| E["Sidecar UI (2×2 卡片 · SVG 趋势图 · 明细表)"]
+  D -->|"1.5s 智能轮询 (unchanged 跳过 / 隐藏暂停)"| E["Sidecar UI (KPI · 上下文 · 趋势图 · 三 Tab)"]
 ```
 
-- **双源只读采集**：结合 `<appData>/brain/<convId>/.system_generated/logs/transcript.jsonl` 与只读 SQLite WAL `<appData>/conversations/<convId>.db`（仅读取 `steps` 表 `step_type = 15` 的轻量 `metadata` Protobuf），内置零依赖 Protobuf Wire 解码器，同时补全纯文本结束步的精确耗时；严格只读、严格 CSP，无外部网络请求。
+- **双源只读采集**：结合 `<appData>/brain/<convId>/.system_generated/logs/transcript.jsonl` 与只读 SQLite WAL `<appData>/conversations/<convId>.db`（读取 `steps` 表 `step_type = 15 / 132` 与 `gen_metadata` 表），内置零依赖 Protobuf Wire 解码器并跳过兆字节级提示词大字段；严格只读、严格 CSP，无外部网络请求。
 - **WAL 感知联合 ETag 与智能轮询**：基于 `transcript.jsonl + .db + .db-wal` 的联合 `mtime/size` 生成 ETag，无变化时前端 1.5 秒轮询直接返回 `unchanged: true`；页签隐藏时自动暂停轮询，开销极低。
 
 <details>
@@ -192,5 +207,5 @@ cache-monitor/
 
 ## 更新日志与开源协议
 
-- **更新日志**：查看 [CHANGELOG.md](./CHANGELOG.md)（当前最新版本 `v1.2.0`）
+- **更新日志**：查看 [CHANGELOG.md](./CHANGELOG.md)（当前最新版本 `v1.3.0`）
 - **开源协议**：[MIT License](./LICENSE)

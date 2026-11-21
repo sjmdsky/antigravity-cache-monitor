@@ -6,6 +6,7 @@
   const METRIC_STORAGE_KEY = 'cache-monitor.chartMetric';
   const TPS_MODE_STORAGE_KEY = 'cache-monitor.tpsMode';
   const LANG_STORAGE_KEY = 'cache-monitor.lang';
+  const CONTEXT_OPEN_STORAGE_KEY = 'cache-monitor.contextOpen';
   const params = new URLSearchParams(window.location.search);
 
   const el = {
@@ -41,16 +42,29 @@
     tpsVal: document.getElementById('tps-val'),
     tpsUnit: document.getElementById('tps-unit'),
     tpsSub: document.getElementById('tps-sub'),
+    contextCard: document.getElementById('context-card'),
+    btnContextToggle: document.getElementById('btn-context-toggle'),
+    contextLabel: document.getElementById('context-label'),
+    contextCompactBadge: document.getElementById('context-compact-badge'),
+    contextUsage: document.getElementById('context-usage'),
+    contextPctBadge: document.getElementById('context-pct-badge'),
+    contextBar: document.getElementById('context-bar'),
+    contextLegend: document.getElementById('context-legend'),
+    contextBreakdown: document.getElementById('context-breakdown'),
+    contextCatPills: document.getElementById('context-cat-pills'),
+    contextItems: document.getElementById('context-items'),
     metricSwitch: document.getElementById('metric-switch'),
     metricHit: document.getElementById('metric-hit'),
     metricTtft: document.getElementById('metric-ttft'),
     metricTps: document.getElementById('metric-tps'),
+    metricCtx: document.getElementById('metric-ctx'),
     trendMeta: document.getElementById('trend-meta'),
     trendChart: document.getElementById('trend-chart'),
     tooltip: document.getElementById('chart-tooltip'),
     tabsBar: document.getElementById('tabs-bar'),
     tabSteps: document.getElementById('tab-steps'),
     tabModels: document.getElementById('tab-models'),
+    tabTools: document.getElementById('tab-tools'),
     detailBody: document.getElementById('detail-body'),
   };
 
@@ -60,6 +74,8 @@
     chartMetric: 'hit',
     tpsMode: 'e2e',
     compact: false,
+    contextOpen: false,
+    contextCategory: 'all',
     emptyKey: 'initial',
     lastConv: '',
     lastEtag: '',
@@ -82,12 +98,31 @@
         tpsSwitchAria: 'Throughput mode',
         tpsE2eTitle: 'End-to-end throughput: output tokens ÷ total model duration (TTFT + generation)',
         tpsDecodeTitle: 'Pure decode speed: output tokens ÷ streaming generation duration (short packets marked burst)',
+        contextLabel: 'Context Window',
+        contextAria: 'Context window',
+        contextCatAria: 'Context category',
         metricSwitchAria: 'Trend metric',
         metricHit: 'Hit Rate',
+        metricCtx: 'Ctx',
         tabsBarAria: 'Detail views',
         stepLabelPlaceholder: 'Step #0',
         tpsSubPlaceholder: 'Session --',
         trendMetaPlaceholder: '80% · 50% ref',
+      },
+      context: {
+        all: 'All',
+        catLabel: (key) => ({
+          'System Prompt': 'System Prompt',
+          'Tools': 'Tools',
+          'Chat Messages': 'Chat History',
+          'Mcp Tools': 'MCP Tools',
+          'Subagents': 'Subagents',
+          'Skills': 'Skills',
+          'Plugins': 'Plugins',
+          'Unspecified': 'Other',
+        }[key] || key),
+        compactBadge: (n) => `✂ ${n} compact`,
+        itemsCount: (shown, total) => (total > shown ? `Top ${shown} of ${total}` : `${shown} items`),
       },
       empty: {
         initial: {
@@ -139,6 +174,12 @@
         tpsRefMeta: (tps, modeLabel) => `Σ ${tps} tok/s (${modeLabel}) ref`,
         hitRefMeta: '80% / 50% ref',
         hitAria: 'Per-step cache hit rate trend chart',
+        ctxAria: 'Per-step context usage trend chart',
+        ctxNoDataMeta: 'No context data',
+        ctxNoDataChart: 'Legacy session, no context window data',
+        ctxMeta: (limitStr) => `Window ${limitStr}`,
+        compactEventNote: (n) => `✂ ${n}`,
+        retryEventNote: (n) => `↻ ${n}`,
       },
       tooltip: {
         durSplit: (m, t) => `Model ${m} · Tools ${t}`,
@@ -148,10 +189,16 @@
         genNote: (ms) => ` (gen ${ms})`,
         outSplit: (th, res) => ` (Think ${th} + Reply ${res})`,
         hitLine: (hit, total, out, outSplit) => `Hit ${hit} / ${total} · Out ${out}${outSplit}`,
+        ctxLine: (used, limit, pct) => `Ctx ${used} / ${limit} (${pct}%)`,
+        compactedEvent: (prev, curr, saved) => `✂ Compacted: ${prev} → ${curr} (-${saved})`,
+        compactedSimple: '✂ Context compacted before this step',
+        retryEvent: (n, err) => `↻ ${n} API ${n === 1 ? 'retry' : 'retries'}${err ? `: ${err}` : ''}`,
+        interruptedEvent: (err) => `↻ Stream interrupted${err ? `: ${err}` : ''}`,
       },
       tables: {
         tabSteps: (n) => `Steps (${n})`,
         tabModels: (n) => `By Model (${n})`,
+        tabTools: (n) => `Tools (${n})`,
         tpsHeaderTitle: (modeLabel) => `Current mode: ${modeLabel} tok/s (switch in top card)`,
         modelDurTitle: (total, timed, totalSteps, avg) =>
           `Total ${total} (${timed}/${totalSteps} timed steps, avg ${avg}/step)`,
@@ -178,7 +225,18 @@
         stepDecTitle: (dec, genMs, e2eNote, splitNote) =>
           `Decode ${dec} tok/s (gen ${genMs})${e2eNote}${splitNote}`,
         stepOutTitle: (th, res) => `Think ${th} + Reply ${res}`,
+        stepCompactTitle: (prev, curr) => (prev ? `Context compacted (${prev} → ${curr})` : 'Context compacted before this step'),
+        stepRetryTitle: (n, err, interrupted) => `${interrupted ? 'Stream interrupted' : `${n} API ${n === 1 ? 'retry' : 'retries'}`}${err ? `: ${err}` : ''}`,
         stepHeaders: ['Step', 'Hit', 'TTFT', 'tok/s', 'Read / New', 'Out', 'Dur', 'Model', 'Time'],
+        toolHeaders: ['Tool', 'Calls', 'Fail', 'Total', 'Avg', 'Max'],
+        toolsEmpty: 'No tool calls recorded in this conversation yet.',
+        toolsSplitModel: (dur, pct) => `Model ${dur} (${pct}%)`,
+        toolsSplitTool: (dur, pct) => `Tools ${dur} (${pct}%)`,
+        toolsCallsSummary: (total, failed, failRate) =>
+          `${total} ${total === 1 ? 'call' : 'calls'}${failed > 0 ? ` · ${failed} fail (${failRate}%)` : ' · 0 fail'}`,
+        toolsSplitTitle: (wall, cum, calls) => `Wall time ${wall} · Cumulative ${cum} across ${calls} calls`,
+        toolAvgTitle: (p50, avg, max) => `P50 ${p50} · Avg ${avg} · Max ${max}`,
+        toolFailTitle: (failed, canceled, running) => `${failed} failed · ${canceled} canceled · ${running} running`,
       },
     },
     zh: {
@@ -194,12 +252,31 @@
         tpsSwitchAria: '速率口径',
         tpsE2eTitle: '端到端吞吐：输出 token ÷ 总模型耗时 (TTFT + 生成)',
         tpsDecodeTitle: '纯解码速率：输出 token ÷ 流式生成时长（短包标 burst）',
+        contextLabel: '上下文窗口',
+        contextAria: '上下文窗口',
+        contextCatAria: '上下文分类',
         metricSwitchAria: '趋势指标',
         metricHit: '命中率',
+        metricCtx: '上下文',
         tabsBarAria: '缓存详情视图',
         stepLabelPlaceholder: '单步 · Step #0',
         tpsSubPlaceholder: '会话 --',
         trendMetaPlaceholder: '80% · 50% 参考线',
+      },
+      context: {
+        all: '全部',
+        catLabel: (key) => ({
+          'System Prompt': '系统提示词',
+          'Tools': '工具定义',
+          'Chat Messages': '对话历史',
+          'Mcp Tools': 'MCP 工具',
+          'Subagents': '子 Agent',
+          'Skills': '技能',
+          'Plugins': '插件',
+          'Unspecified': '其他',
+        }[key] || key),
+        compactBadge: (n) => `✂ ${n} 次压缩`,
+        itemsCount: (shown, total) => (total > shown ? `前 ${shown} / 共 ${total} 项` : `共 ${shown} 项`),
       },
       empty: {
         initial: {
@@ -251,6 +328,12 @@
         tpsRefMeta: (tps, modeLabel) => `Σ ${tps} tok/s (${modeLabel}) 参考线`,
         hitRefMeta: '80% / 50% 参考线',
         hitAria: '每步缓存命中率趋势图',
+        ctxAria: '每步上下文占用趋势图',
+        ctxNoDataMeta: '无上下文数据',
+        ctxNoDataChart: '旧版会话，暂无上下文窗口数据',
+        ctxMeta: (limitStr) => `窗口上限 ${limitStr}`,
+        compactEventNote: (n) => `✂ ${n}`,
+        retryEventNote: (n) => `↻ ${n}`,
       },
       tooltip: {
         durSplit: (m, t) => `模型 ${m} · 工具 ${t}`,
@@ -260,10 +343,16 @@
         genNote: (ms) => ` (生成 ${ms})`,
         outSplit: (th, res) => ` (思 ${th} + 答 ${res})`,
         hitLine: (hit, total, out, outSplit) => `命中 ${hit} / 总 ${total} · 输出 ${out}${outSplit}`,
+        ctxLine: (used, limit, pct) => `上下文 ${used} / ${limit} (${pct}%)`,
+        compactedEvent: (prev, curr, saved) => `✂ 上下文压缩：${prev} → ${curr} (-${saved})`,
+        compactedSimple: '✂ 此步前触发了上下文压缩',
+        retryEvent: (n, err) => `↻ API 重试 ${n} 次${err ? `：${err}` : ''}`,
+        interruptedEvent: (err) => `↻ 流式中断${err ? `：${err}` : ''}`,
       },
       tables: {
         tabSteps: (n) => `步骤明细 (${n})`,
         tabModels: (n) => `按模型汇总 (${n})`,
+        tabTools: (n) => `工具 (${n})`,
         tpsHeaderTitle: (modeLabel) => `当前口径：${modeLabel} tok/s（可在上方卡片切换）`,
         modelDurTitle: (total, timed, totalSteps, avg) =>
           `累计 ${total}（已统计 ${timed}/${totalSteps} 步，均 ${avg}/步）`,
@@ -290,7 +379,18 @@
         stepDecTitle: (dec, genMs, e2eNote, splitNote) =>
           `Decode ${dec} tok/s（生成 ${genMs}）${e2eNote}${splitNote}`,
         stepOutTitle: (th, res) => `思考 ${th} + 回复 ${res}`,
+        stepCompactTitle: (prev, curr) => (prev ? `上下文压缩 (${prev} → ${curr})` : '此步前触发了上下文压缩'),
+        stepRetryTitle: (n, err, interrupted) => `${interrupted ? '流式中断' : `API 重试 ${n} 次`}${err ? `：${err}` : ''}`,
         stepHeaders: ['步', '命中', 'TTFT', 'tok/s', '读 / 新增', '输出', '用时', '模型', '时间'],
+        toolHeaders: ['工具', '次数', '失败', '总耗时', '均耗时', '最大'],
+        toolsEmpty: '当前会话暂无工具调用记录。',
+        toolsSplitModel: (dur, pct) => `模型 ${dur} (${pct}%)`,
+        toolsSplitTool: (dur, pct) => `工具 ${dur} (${pct}%)`,
+        toolsCallsSummary: (total, failed, failRate) =>
+          `共 ${total} 次调用${failed > 0 ? ` · 失败 ${failed} (${failRate}%)` : ' · 0 失败'}`,
+        toolsSplitTitle: (wall, cum, calls) => `墙钟耗时 ${wall} · ${calls} 次累计耗时 ${cum}`,
+        toolAvgTitle: (p50, avg, max) => `P50 ${p50} · 均 ${avg} · 最大 ${max}`,
+        toolFailTitle: (failed, canceled, running) => `失败 ${failed} · 取消 ${canceled} · 运行中 ${running}`,
       },
     },
   };
@@ -427,6 +527,23 @@
     return 'bad';
   }
 
+  function ctxTier(pct) {
+    if (pct === null || pct === undefined || !Number.isFinite(pct)) return 'cold';
+    if (pct < 50) return 'good';
+    if (pct < 75) return 'warn';
+    if (pct < 90) return 'low';
+    return 'bad';
+  }
+
+  function ctxColorVar(catKey) {
+    if (catKey === 'System Prompt') return 'var(--cm-ctx-sys)';
+    if (catKey === 'Tools' || catKey === 'Mcp Tools' || catKey === 'Skills' || catKey === 'Plugins' || catKey === 'Subagents') {
+      return 'var(--cm-ctx-tools)';
+    }
+    if (catKey === 'Chat Messages') return 'var(--cm-ctx-chat)';
+    return 'var(--cm-ctx-other)';
+  }
+
   function niceCeil(maxVal) {
     if (!Number.isFinite(maxVal) || maxVal <= 0) return 10;
     const exp = Math.floor(Math.log10(maxVal));
@@ -453,8 +570,12 @@
     el.tpsSwitch.setAttribute('aria-label', s.tpsSwitchAria);
     el.tpsModeE2e.title = s.tpsE2eTitle;
     el.tpsModeDecode.title = s.tpsDecodeTitle;
+    el.contextCard.setAttribute('aria-label', s.contextAria);
+    el.contextLabel.textContent = s.contextLabel;
+    el.contextCatPills.setAttribute('aria-label', s.contextCatAria);
     el.metricSwitch.setAttribute('aria-label', s.metricSwitchAria);
     el.metricHit.textContent = s.metricHit;
+    el.metricCtx.textContent = s.metricCtx;
     el.tabsBar.setAttribute('aria-label', s.tabsBarAria);
 
     if (!state.payload) {
@@ -464,6 +585,7 @@
       el.trendMeta.textContent = s.trendMetaPlaceholder;
       el.tabSteps.textContent = t.tables.tabSteps(0);
       el.tabModels.textContent = t.tables.tabModels(0);
+      el.tabTools.textContent = t.tables.tabTools(0);
     }
   }
 
@@ -506,10 +628,26 @@
     }
   }
 
+  function setContextOpen(next, { persist = true, rerender = true } = {}) {
+    state.contextOpen = Boolean(next);
+    el.btnContextToggle.setAttribute('aria-expanded', state.contextOpen ? 'true' : 'false');
+    el.contextBreakdown.classList.toggle('hidden', !state.contextOpen);
+    if (persist) {
+      try {
+        localStorage.setItem(CONTEXT_OPEN_STORAGE_KEY, state.contextOpen ? '1' : '0');
+      } catch {
+        // Sandboxed iframe origin may restrict storage.
+      }
+    }
+    if (rerender && state.payload?.status === 'ok' && state.payload.context) {
+      renderContextBreakdown(state.payload.context);
+    }
+  }
+
   function setChartMetric(next, { persist = true, rerender = true } = {}) {
-    const valid = next === 'ttft' || next === 'tps' ? next : 'hit';
+    const valid = next === 'ttft' || next === 'tps' || next === 'ctx' ? next : 'hit';
     state.chartMetric = valid;
-    for (const btn of [el.metricHit, el.metricTtft, el.metricTps]) {
+    for (const btn of [el.metricHit, el.metricTtft, el.metricTps, el.metricCtx]) {
       const active = btn.dataset.metric === valid;
       btn.classList.toggle('active', active);
       btn.setAttribute('aria-selected', active ? 'true' : 'false');
@@ -522,7 +660,7 @@
       }
     }
     if (rerender && state.payload?.status === 'ok') {
-      renderChart(state.payload.steps, state.payload.summary);
+      renderChart(state.payload.steps, state.payload.summary, state.payload.context);
     }
   }
 
@@ -544,7 +682,7 @@
     if (rerender && state.payload?.status === 'ok') {
       renderKpis(state.payload.summary);
       if (state.chartMetric === 'tps') {
-        renderChart(state.payload.steps, state.payload.summary);
+        renderChart(state.payload.steps, state.payload.summary, state.payload.context);
       }
       renderDetails(state.payload);
     }
@@ -554,8 +692,11 @@
     if (localStorage.getItem(COMPACT_STORAGE_KEY) === '1') {
       setCompact(true);
     }
+    if (localStorage.getItem(CONTEXT_OPEN_STORAGE_KEY) === '1') {
+      setContextOpen(true, { persist: false, rerender: false });
+    }
     const savedMetric = localStorage.getItem(METRIC_STORAGE_KEY);
-    if (savedMetric === 'hit' || savedMetric === 'ttft' || savedMetric === 'tps') {
+    if (savedMetric === 'hit' || savedMetric === 'ttft' || savedMetric === 'tps' || savedMetric === 'ctx') {
       setChartMetric(savedMetric, { persist: false, rerender: false });
     }
     const savedTpsMode = localStorage.getItem(TPS_MODE_STORAGE_KEY);
@@ -570,8 +711,19 @@
 
   el.btnLang.addEventListener('click', () => setLang(state.lang === 'en' ? 'zh' : 'en'));
   el.btnCompact.addEventListener('click', () => setCompact(!state.compact));
+  el.btnContextToggle.addEventListener('click', () => setContextOpen(!state.contextOpen));
 
-  for (const btn of [el.metricHit, el.metricTtft, el.metricTps]) {
+  el.contextCatPills.addEventListener('click', (e) => {
+    const pill = e.target.closest?.('.ctx-cat-pill');
+    const next = pill?.dataset?.cat;
+    if (!next || next === state.contextCategory) return;
+    state.contextCategory = next;
+    if (state.payload?.status === 'ok' && state.payload.context) {
+      renderContextBreakdown(state.payload.context);
+    }
+  });
+
+  for (const btn of [el.metricHit, el.metricTtft, el.metricTps, el.metricCtx]) {
     btn.addEventListener('click', () => {
       const next = btn.dataset.metric;
       if (next && next !== state.chartMetric) {
@@ -589,15 +741,16 @@
     });
   }
 
-  for (const btn of [el.tabSteps, el.tabModels]) {
+  for (const btn of [el.tabSteps, el.tabModels, el.tabTools]) {
     btn.addEventListener('click', () => {
       const next = btn.dataset.tab;
       if (!next || next === state.activeTab) return;
       state.activeTab = next;
-      el.tabSteps.classList.toggle('active', next === 'steps');
-      el.tabSteps.setAttribute('aria-selected', next === 'steps' ? 'true' : 'false');
-      el.tabModels.classList.toggle('active', next === 'models');
-      el.tabModels.setAttribute('aria-selected', next === 'models' ? 'true' : 'false');
+      for (const tabBtn of [el.tabSteps, el.tabModels, el.tabTools]) {
+        const active = tabBtn.dataset.tab === next;
+        tabBtn.classList.toggle('active', active);
+        tabBtn.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
       if (state.payload?.status === 'ok') {
         renderDetails(state.payload);
       }
@@ -817,7 +970,141 @@
       .join('');
   }
 
-  function renderChart(steps, summary) {
+  function renderContextBreakdown(context) {
+    const cx = tr().context;
+    const cats = (context?.breakdown?.categories || []).filter((c) => c.items && c.items.length > 0);
+    if (cats.length === 0) {
+      el.contextCatPills.innerHTML = '';
+      el.contextItems.innerHTML = '';
+      return;
+    }
+
+    if (state.contextCategory !== 'all' && !cats.some((c) => c.key === state.contextCategory)) {
+      state.contextCategory = 'all';
+    }
+
+    const pills = [
+      `<button type="button" class="ctx-cat-pill${state.contextCategory === 'all' ? ' active' : ''}" role="tab" aria-selected="${state.contextCategory === 'all' ? 'true' : 'false'}" data-cat="all">${esc(cx.all)}</button>`,
+      ...cats.map((cat) => {
+        const active = state.contextCategory === cat.key;
+        return `<button type="button" class="ctx-cat-pill${active ? ' active' : ''}" role="tab" aria-selected="${active ? 'true' : 'false'}" data-cat="${esc(cat.key)}">${esc(cx.catLabel(cat.key))} · ${esc(fmtTokens(cat.tokens))}</button>`;
+      }),
+    ];
+    el.contextCatPills.innerHTML = pills.join('');
+
+    let items = [];
+    if (state.contextCategory === 'all') {
+      items = cats
+        .flatMap((cat) => cat.items.map((it) => ({ ...it, catKey: cat.key })))
+        .sort((a, b) => b.tokens - a.tokens)
+        .slice(0, 15);
+    } else {
+      const selected = cats.find((c) => c.key === state.contextCategory);
+      if (selected) {
+        items = selected.items.map((it) => ({ ...it, catKey: selected.key }));
+      }
+    }
+
+    const maxTokens = items[0]?.tokens || 1;
+    el.contextItems.innerHTML = items
+      .map((item) => {
+        const widthPct = Math.max(2, Math.round((item.tokens * 100) / maxTokens));
+        const dotColor = ctxColorVar(item.catKey);
+        return `<div class="ctx-item-row">
+          <div class="ctx-item-name" title="${esc(item.name)}">
+            <span class="ctx-dot" style="background:${dotColor}"></span>
+            <span class="mono">${esc(item.name)}</span>
+          </div>
+          <div class="ctx-item-bar"><div class="ctx-item-fill" style="width:${widthPct}%;background:${dotColor}"></div></div>
+          <div class="ctx-item-val">${esc(fmtTokens(item.tokens))} · ${esc(item.pct)}%</div>
+        </div>`;
+      })
+      .join('');
+  }
+
+  function renderContextCard(context) {
+    if (!context || !context.limit) {
+      el.contextCard.classList.add('hidden');
+      el.metricCtx.classList.add('hidden');
+      if (state.chartMetric === 'ctx') {
+        setChartMetric('hit', { persist: false, rerender: false });
+      }
+      return;
+    }
+
+    el.contextCard.classList.remove('hidden');
+    el.metricCtx.classList.remove('hidden');
+
+    const cx = tr().context;
+    const tier = ctxTier(context.pct);
+    el.contextUsage.textContent = `${fmtTokens(context.used)} / ${fmtTokens(context.limit)}`;
+    el.contextUsage.title = `${context.used.toLocaleString()} / ${context.limit.toLocaleString()}`;
+    el.contextPctBadge.className = `kpi-badge c-${tier}`;
+    el.contextPctBadge.textContent = `${context.pct}%`;
+
+    if (context.compactionCount > 0) {
+      el.contextCompactBadge.textContent = cx.compactBadge(context.compactionCount);
+      el.contextCompactBadge.classList.remove('hidden');
+    } else {
+      el.contextCompactBadge.classList.add('hidden');
+    }
+
+    const cats = context.breakdown?.categories || [];
+    if (cats.length > 0) {
+      const denom = Math.max(context.limit, context.breakdown.totalTokens || 0);
+      el.contextBar.innerHTML = cats
+        .map((cat) => {
+          const w = Math.max(0.4, (cat.tokens * 100) / denom).toFixed(2);
+          const color = ctxColorVar(cat.key);
+          const label = cx.catLabel(cat.key);
+          return `<div class="ctx-bar-seg" style="width:${w}%;background:${color}" title="${esc(label)}: ${esc(fmtTokens(cat.tokens))} (${esc(cat.pct)}%)"></div>`;
+        })
+        .join('');
+
+      el.contextLegend.innerHTML = cats
+        .map((cat) => {
+          const color = ctxColorVar(cat.key);
+          const label = cx.catLabel(cat.key);
+          return `<span class="ctx-legend-item" title="${esc(label)}: ${esc(cat.tokens.toLocaleString())} (${esc(cat.pct)}%)">
+            <span class="ctx-dot" style="background:${color}"></span>
+            <span>${esc(label)}</span>
+            <span class="mono">${esc(fmtTokens(cat.tokens))} (${Math.round(cat.pct)}%)</span>
+          </span>`;
+        })
+        .join('');
+    } else {
+      el.contextBar.innerHTML = `<div class="ctx-bar-seg bg-${tier}" style="width:${Math.min(100, context.pct)}%"></div>`;
+      el.contextLegend.innerHTML = '';
+    }
+
+    if (state.contextOpen) {
+      renderContextBreakdown(context);
+    }
+  }
+
+  function renderEventMarkersSvg(visible, left, top, bottom, slotW) {
+    const parts = [];
+    for (let idx = 0; idx < visible.length; idx++) {
+      const st = visible[idx];
+      if (st.compacted) {
+        const x = Number((left + idx * slotW).toFixed(2));
+        parts.push(`<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}"
+          stroke="var(--cm-event-compact)" stroke-opacity="0.75" stroke-width="1.2" stroke-dasharray="2,2" />`);
+        parts.push(`<polygon points="${x},${top + 0.5} ${x + 3},${top + 3.5} ${x},${top + 6.5} ${x - 3},${top + 3.5}"
+          fill="var(--cm-event-compact)" />`);
+      }
+      if (st.retryCount > 0) {
+        const xc = Number((left + (idx + 0.5) * slotW).toFixed(2));
+        const fill = st.interrupted ? 'var(--cm-bad)' : 'var(--cm-low)';
+        parts.push(`<polygon points="${xc},${top + 0.5} ${xc + 3},${top + 5.5} ${xc - 3},${top + 5.5}"
+          fill="${fill}" />`);
+      }
+    }
+    if (parts.length === 0) return '';
+    return `<g pointer-events="none">${parts.join('')}</g>`;
+  }
+
+  function renderChart(steps, summary, context) {
     const c = tr().chart;
     const MAX_BARS = 48;
     const visible = steps.length > MAX_BARS ? steps.slice(-MAX_BARS) : steps;
@@ -828,6 +1115,13 @@
     const countLabel = steps.length > MAX_BARS
       ? c.countLast(MAX_BARS, steps.length)
       : c.countAll(steps.length);
+
+    const visCompacts = visible.filter((s) => s.compacted).length;
+    const visRetries = visible.reduce((acc, s) => acc + (s.retryCount || 0), 0);
+    const evParts = [];
+    if (visCompacts > 0) evParts.push(c.compactEventNote(visCompacts));
+    if (visRetries > 0) evParts.push(c.retryEventNote(visRetries));
+    const evSuffix = evParts.length > 0 ? ` · ${evParts.join(' · ')}` : '';
 
     const W = 360;
     const H = 114;
@@ -864,6 +1158,7 @@
     const slotW = plotW / Math.max(visible.length, 1);
     const barW = Math.max(3, Math.min(18, slotW * 0.68));
     const xAxisSvg = buildXAxisSvg(visible, left, right, slotW, H);
+    const markersSvg = renderEventMarkersSvg(visible, left, top, bottom, slotW);
 
     if (metric === 'ttft') {
       const validSecs = visible.filter((s) => s.ttftMs != null).map((s) => s.ttftMs / 1000);
@@ -879,9 +1174,9 @@
       const yAt = (sec) => top + (1 - Math.min(sec, maxSec) / maxSec) * plotH;
       const fmtTickSec = (s) => (s === 0 ? '0s' : s >= 60 ? fmtDuration(s) : (Number.isInteger(s) ? `${s}s` : `${s.toFixed(1)}s`));
 
-      el.trendMeta.textContent = summary?.p50TtftMs != null
+      el.trendMeta.textContent = (summary?.p50TtftMs != null
         ? `${countLabel} · ${c.ttftRefMeta(fmtLatency(summary.p50TtftMs))}`
-        : `${countLabel} · ${c.ttftMeta}`;
+        : `${countLabel} · ${c.ttftMeta}`) + evSuffix;
 
       const refSpecs = [
         { val: maxSec, label: fmtTickSec(maxSec), dash: '2,3', opacity: 0.25 },
@@ -924,6 +1219,7 @@
       el.trendChart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${esc(c.ttftAria)}">
         ${refLines}
         ${barsSvg}
+        ${markersSvg}
         ${xAxisSvg}
       </svg>`;
       return;
@@ -949,9 +1245,9 @@
       const fmtTickTps = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(Math.round(v)));
       const refTps = isE2e ? summary?.sessionE2eTps : summary?.sessionDecodeTps;
 
-      el.trendMeta.textContent = refTps != null
+      el.trendMeta.textContent = (refTps != null
         ? `${countLabel} · ${c.tpsRefMeta(fmtTps(refTps), modeLabel)}`
-        : `${countLabel} · ${modeLabel} tok/s`;
+        : `${countLabel} · ${modeLabel} tok/s`) + evSuffix;
 
       const refSpecs = [
         { val: maxTps, label: fmtTickTps(maxTps), dash: '2,3', opacity: 0.25 },
@@ -992,12 +1288,84 @@
       el.trendChart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${esc(c.tpsAria)}">
         ${refLines}
         ${barsSvg}
+        ${markersSvg}
         ${xAxisSvg}
       </svg>`;
       return;
     }
 
-    el.trendMeta.textContent = `${countLabel} · ${c.hitRefMeta}`;
+    if (metric === 'ctx') {
+      const validCtx = visible.filter((s) => s.contextTokens != null).map((s) => s.contextTokens);
+      if (validCtx.length === 0) {
+        el.trendMeta.textContent = `${countLabel} · ${c.ctxNoDataMeta}`;
+        el.trendChart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${esc(c.ctxAria)}">
+          <text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="10.5" fill="var(--cm-fg-muted)">${esc(c.ctxNoDataChart)}</text>
+        </svg>`;
+        return;
+      }
+
+      const limit = context?.limit || Math.max(...visible.map((s) => s.contextLimit || 0), 0);
+      const maxVal = Math.max(...validCtx, 1000);
+      const rawCeil = limit > 0
+        ? (maxVal > limit * 0.6 ? limit : Math.max(maxVal * 1.15, limit * 0.25))
+        : maxVal * 1.15;
+      const yMax = niceCeil(rawCeil);
+      const yAt = (v) => top + (1 - Math.min(v, yMax) / yMax) * plotH;
+      const fmtTickCtx = (v) => (v === 0 ? '0' : fmtTokens(Math.round(v)).replace(/\.0([kM])$/, '$1'));
+
+      el.trendMeta.textContent = (limit > 0
+        ? `${countLabel} · ${c.ctxMeta(fmtTickCtx(limit))}`
+        : `${countLabel} · ${c.ctxNoDataMeta}`) + evSuffix;
+
+      const refSpecs = [
+        { val: yMax, label: fmtTickCtx(yMax), dash: '2,3', opacity: 0.25 },
+        { val: yMax / 2, label: fmtTickCtx(yMax / 2), dash: '2,3', opacity: 0.25 },
+        { val: 0, label: '0', dash: '', opacity: 0.35 },
+      ];
+      if (limit > 0 && limit * 0.75 <= yMax) {
+        refSpecs.push({ val: limit * 0.75, label: '', dash: '3,3', opacity: 0.45, stroke: 'var(--cm-warn)' });
+      }
+      if (limit > 0 && limit <= yMax) {
+        refSpecs.push({ val: limit, label: '', dash: '3,3', opacity: 0.55, stroke: 'var(--cm-bad)' });
+      }
+      const refLines = drawRefLines(refSpecs, yAt);
+
+      const barsSvg = visible
+        .map((st, idx) => {
+          const xCenter = left + (idx + 0.5) * slotW;
+          const x = (xCenter - barW / 2).toFixed(2);
+          const slotX = (left + idx * slotW).toFixed(2);
+          let barRect = '';
+          if (st.contextTokens == null) {
+            const h = 8;
+            const y = (bottom - h).toFixed(2);
+            barRect = `<rect class="bar-rect" x="${x}" y="${y}" width="${barW.toFixed(2)}" height="${h}" rx="1.5"
+              fill="${colorVar.cold}" fill-opacity="0.35" stroke="${colorVar.cold}" stroke-width="1" stroke-dasharray="2,2" />`;
+          } else {
+            const pct = st.contextPct ?? (limit > 0 ? (st.contextTokens * 100) / limit : 0);
+            const tier = ctxTier(pct);
+            const h = Math.max(4, Math.min(1, st.contextTokens / yMax) * plotH);
+            const y = (bottom - h).toFixed(2);
+            barRect = `<rect class="bar-rect" x="${x}" y="${y}" width="${barW.toFixed(2)}" height="${h.toFixed(2)}" rx="1.8"
+              fill="${colorVar[tier]}" />`;
+          }
+          return `<g class="chart-bar-hit" data-idx="${idx}">
+            <rect x="${slotX}" y="${top}" width="${slotW.toFixed(2)}" height="${plotH}" fill="transparent" />
+            ${barRect}
+          </g>`;
+        })
+        .join('');
+
+      el.trendChart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${esc(c.ctxAria)}">
+        ${refLines}
+        ${barsSvg}
+        ${markersSvg}
+        ${xAxisSvg}
+      </svg>`;
+      return;
+    }
+
+    el.trendMeta.textContent = `${countLabel} · ${c.hitRefMeta}${evSuffix}`;
     const yAt = (pct) => top + (1 - pct / 100) * plotH;
     const refLines = drawRefLines([
       { val: 100, label: '100%', dash: '2,3', opacity: 0.25 },
@@ -1042,6 +1410,7 @@
     el.trendChart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${esc(c.hitAria)}">
       ${refLines}
       ${barsSvg}
+      ${markersSvg}
       ${xAxisSvg}
     </svg>`;
   }
@@ -1093,12 +1462,32 @@
     const outSplit = st.thinkingTokens != null
       ? tt.outSplit(esc(fmtTokens(st.thinkingTokens)), esc(fmtTokens(st.responseTokens)))
       : '';
+    const ctxLine = st.contextTokens != null
+      ? `<div class="muted mono">${esc(tt.ctxLine(fmtTokens(st.contextTokens), fmtTokens(st.contextLimit || 0), st.contextPct ?? 0))}</div>`
+      : '';
+    let compactLine = '';
+    if (st.compacted) {
+      const msg = (st.prevContextTokens != null && st.contextTokens != null && st.prevContextTokens > st.contextTokens)
+        ? tt.compactedEvent(fmtTokens(st.prevContextTokens), fmtTokens(st.contextTokens), fmtTokens(st.prevContextTokens - st.contextTokens))
+        : tt.compactedSimple;
+      compactLine = `<div class="tooltip-ev" style="color:var(--cm-event-compact)">${esc(msg)}</div>`;
+    }
+    let retryLine = '';
+    if (st.retryCount > 0) {
+      const msg = st.interrupted
+        ? tt.interruptedEvent(st.retryError)
+        : tt.retryEvent(st.retryCount, st.retryError);
+      retryLine = `<div class="tooltip-ev ${st.interrupted ? 'c-bad' : 'c-low'}">${esc(msg)}</div>`;
+    }
 
     el.tooltip.innerHTML = `
       <div><strong>Step #${esc(st.seq)}</strong> · <span class="c-${tier}">${esc(rateLabel)}</span>${st.isMiss ? ' <span class="miss-flag">⚠ Miss</span>' : ''}</div>
       ${perfLine}
       <div class="muted mono">${tt.hitLine(esc(fmtTokens(st.cacheReadTokens)), esc(fmtTokens(st.totalInput)), esc(fmtTokens(st.outputTokens)), outSplit)}</div>
+      ${ctxLine}
       <div class="muted mono">${esc(shortModel(st.model))} · ${esc(fmtTime(st.createdAt))}${esc(durInfo)}</div>
+      ${compactLine}
+      ${retryLine}
     `;
     el.tooltip.classList.remove('hidden');
 
@@ -1128,6 +1517,87 @@
     const modeLabel = isE2e ? 'E2E' : 'Decode';
     el.tabSteps.textContent = tb.tabSteps(steps.length);
     el.tabModels.textContent = tb.tabModels(models.length);
+    el.tabTools.textContent = tb.tabTools(payload.tools?.summary?.totalCalls || 0);
+
+    if (state.activeTab === 'tools') {
+      const toolsData = payload.tools;
+      if (!toolsData || !toolsData.items || toolsData.items.length === 0) {
+        el.detailBody.innerHTML = `<div class="tools-empty">${esc(tb.toolsEmpty)}</div>`;
+        return;
+      }
+
+      const ts = toolsData.summary;
+      const modelMs = ts.totalModelMs || 0;
+      const toolWallMs = ts.wallToolMs || 0;
+      const combinedMs = modelMs + toolWallMs;
+      let splitHtml = '';
+      if (combinedMs > 0) {
+        const modelPct = Math.round((modelMs * 100) / combinedMs);
+        const toolPct = 100 - modelPct;
+        splitHtml = `
+          <div class="tools-split-bar" aria-hidden="true">
+            <div class="split-model" style="width:${modelPct}%"></div>
+            <div class="split-tools" style="width:${toolPct}%"></div>
+          </div>
+          <div class="tools-split-meta">
+            <span class="ctx-legend-item">
+              <span class="ctx-dot" style="background:var(--cm-ctx-sys)"></span>
+              <span>${esc(tb.toolsSplitModel(fmtLatency(modelMs), modelPct))}</span>
+            </span>
+            <span class="ctx-legend-item" title="${esc(tb.toolsSplitTitle(fmtLatency(toolWallMs), fmtLatency(ts.totalExecMs), ts.totalCalls))}">
+              <span class="ctx-dot" style="background:var(--cm-ctx-tools)"></span>
+              <span>${esc(tb.toolsSplitTool(fmtLatency(toolWallMs), toolPct))}</span>
+            </span>
+            <span class="${ts.failedCalls > 0 ? 'c-bad' : 'muted'}">${esc(tb.toolsCallsSummary(ts.totalCalls, ts.failedCalls, ts.failRatePct))}</span>
+          </div>`;
+      } else {
+        splitHtml = `<div class="tools-split-meta">
+          <span class="${ts.failedCalls > 0 ? 'c-bad' : 'muted'}">${esc(tb.toolsCallsSummary(ts.totalCalls, ts.failedCalls, ts.failRatePct))}</span>
+        </div>`;
+      }
+
+      const th = tb.toolHeaders;
+      const maxItemTotal = Math.max(...toolsData.items.map((x) => x.totalMs || 0), 1);
+      const rows = toolsData.items
+        .map((item) => {
+          const shareW = item.timedCalls > 0 ? Math.max(4, Math.round((item.totalMs * 100) / maxItemTotal)) : 0;
+          const failText = item.failed > 0 ? `${item.failed} (${item.failRatePct}%)` : '0';
+          const failTitle = tb.toolFailTitle(item.failed, item.canceled, item.running);
+          const avgTitle = item.timedCalls > 0
+            ? tb.toolAvgTitle(fmtLatency(item.p50Ms), fmtLatency(item.avgMs), fmtLatency(item.maxMs))
+            : '';
+          return `<tr>
+            <td class="tool-name-cell mono" title="${esc(item.name)}">${esc(item.name)}</td>
+            <td class="num">${esc(item.calls)}</td>
+            <td class="num ${item.failed > 0 ? 'c-bad' : 'muted'}" title="${esc(failTitle)}">${esc(failText)}</td>
+            <td class="num">
+              <span class="mini-bar-wrap">
+                <span class="mini-track"><span class="mini-fill" style="width:${shareW}%;background:var(--cm-ctx-tools)"></span></span>
+                <span>${esc(item.timedCalls > 0 ? fmtLatency(item.totalMs) : '--')}</span>
+              </span>
+            </td>
+            <td class="num muted"${avgTitle ? ` title="${esc(avgTitle)}"` : ''}>${esc(fmtLatency(item.avgMs))}</td>
+            <td class="num muted">${esc(fmtLatency(item.maxMs))}</td>
+          </tr>`;
+        })
+        .join('');
+
+      el.detailBody.innerHTML = `<div class="tools-summary">${splitHtml}</div>
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th>${esc(th[0])}</th>
+              <th class="num">${esc(th[1])}</th>
+              <th class="num">${esc(th[2])}</th>
+              <th class="num">${esc(th[3])}</th>
+              <th class="num">${esc(th[4])}</th>
+              <th class="num">${esc(th[5])}</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      return;
+    }
 
     if (state.activeTab === 'models') {
       const mh = tb.modelHeaders;
@@ -1228,8 +1698,14 @@
         const outTitle = st.thinkingTokens != null
           ? tb.stepOutTitle(st.thinkingTokens, st.responseTokens)
           : '';
+        const compactTag = st.compacted
+          ? `<span class="ev-tag ev-compact" title="${esc(tb.stepCompactTitle(st.prevContextTokens != null ? fmtTokens(st.prevContextTokens) : '', st.contextTokens != null ? fmtTokens(st.contextTokens) : ''))}">✂</span>`
+          : '';
+        const retryTag = st.retryCount > 0
+          ? `<span class="ev-tag ev-retry" title="${esc(tb.stepRetryTitle(st.retryCount, st.retryError, st.interrupted))}">↻${st.retryCount > 1 ? esc(st.retryCount) : ''}</span>`
+          : '';
         return `<tr class="${st.isMiss ? 'row-miss' : ''}">
-          <td class="step-cell mono muted">#${esc(st.seq)}</td>
+          <td class="step-cell mono muted">#${esc(st.seq)}${compactTag}${retryTag}</td>
           <td class="num c-${tier}"${hitTitle ? ` title="${esc(hitTitle)}"` : ''}>${esc(pctLabel)}${st.isMiss ? '<span class="miss-flag" title="Cache Miss">⚠</span>' : ''}</td>
           <td class="num c-${ttftTier(st.ttftMs)}" title="${esc(ttftTitle)}">${esc(fmtLatency(st.ttftMs))}</td>
           ${tpsCell}
@@ -1275,7 +1751,8 @@
     }
 
     renderKpis(payload.summary);
-    renderChart(payload.steps, payload.summary);
+    renderContextCard(payload.context);
+    renderChart(payload.steps, payload.summary, payload.context);
     renderDetails(payload);
   }
 
