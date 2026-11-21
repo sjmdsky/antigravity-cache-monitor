@@ -1,0 +1,21 @@
+{
+  "command": "node",
+  "args": ["--no-warnings=ExperimentalWarning", "main.mjs"],
+  "restart_policy": "always",
+  "display_name": "Cache Monitor",
+  "description": "Live prompt cache hit rate, TTFT, and E2E/Decode tok/s monitor for the active conversation.",
+  "has_web_ui": true,
+  "agent_permissions": {
+    "allows_user_interactions": false
+  },
+  "ui_config": {
+    "display_name": "Cache Monitor",
+    "views": [
+      {
+        "path": "/",
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE",
+        "title": "Cache Monitor"
+      }
+    ]
+  }
+}

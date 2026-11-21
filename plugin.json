@@ -1,0 +1,11 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "cache-monitor",
+  "displayName": "Cache Monitor",
+  "version": "1.1.0",
+  "description": "Live prompt cache hit rate, TTFT, and E2E/Decode tok/s monitor for the active conversation in the side panel.",
+  "author": "sjmdsky",
+  "homepage": "https://github.com/sjmdsky/antigravity-cache-monitor",
+  "repository": "https://github.com/sjmdsky/antigravity-cache-monitor",
+  "logo": "assets/logo.svg"
+}

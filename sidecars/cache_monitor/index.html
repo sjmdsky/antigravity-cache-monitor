@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; frame-src 'none'; child-src 'none'">
+  <title>Cache Monitor</title>
+  <script src="/preload.js"></script>
+  <link rel="stylesheet" href="/styles.css?v=6">
+  <script defer src="/app.js?v=6"></script>
+</head>
+<body>
+  <div id="app" class="shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="8" ry="3"/>
+            <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/>
+            <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/>
+          </svg>
+        </span>
+        <span class="brand-title">Cache Monitor</span>
+        <span id="model-pill" class="model-pill hidden"></span>
+      </div>
+      <div class="topbar-right">
+        <button id="btn-compact" type="button" class="toggle-btn" aria-pressed="false" title="切换紧凑视图（仅保留核心指标卡片）">紧凑</button>
+        <span id="live-pill" class="live-pill" title="每 1.5 秒自动检查更新">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span id="live-text">Live</span>
+        </span>
+      </div>
+    </header>
+
+    <section id="empty-state" class="empty-card">
+      <div class="empty-title" id="empty-title">等待会话开始</div>
+      <div class="empty-desc" id="empty-desc">发送首条消息并收到模型响应后，将自动显示单步与累计缓存命中率。</div>
+    </section>
+
+    <main id="dashboard" class="dashboard hidden">
+      <section class="kpi-grid" aria-label="核心监控指标">
+        <article id="kpi-step" class="kpi-card">
+          <div class="kpi-head">
+            <span class="kpi-label" id="step-label">单步 · Step #0</span>
+            <span class="kpi-badge muted" id="step-badge">--</span>
+          </div>
+          <div class="kpi-value-row">
+            <span class="kpi-pct" id="step-pct">--</span>
+          </div>
+          <div class="bar-track" aria-hidden="true">
+            <div class="bar-fill" id="step-bar"></div>
+          </div>
+          <div class="kpi-sub" id="step-sub">0 / 0</div>
+        </article>
+
+        <article id="kpi-total" class="kpi-card">
+          <div class="kpi-head">
+            <span class="kpi-label">累计 · Σ Session</span>
+            <span class="kpi-badge muted" id="total-badge">0 steps</span>
+          </div>
+          <div class="kpi-value-row">
+            <span class="kpi-pct" id="total-pct">--</span>
+          </div>
+          <div class="bar-track" aria-hidden="true">
+            <div class="bar-fill" id="total-bar"></div>
+          </div>
+          <div class="kpi-sub" id="total-sub">0 / 0</div>
+        </article>
+
+        <article id="kpi-ttft" class="kpi-card kpi-card-perf">
+          <div class="kpi-head">
+            <span class="kpi-label" id="ttft-label">TTFT · 首字延迟</span>
+            <span class="kpi-badge muted" id="ttft-badge">--</span>
+          </div>
+          <div class="kpi-value-row">
+            <span class="kpi-pct" id="ttft-val">--</span>
+          </div>
+          <div class="kpi-sub" id="ttft-sub">P50 -- · P95 --</div>
+        </article>
+
+        <article id="kpi-tps" class="kpi-card kpi-card-perf">
+          <div class="kpi-head">
+            <div class="tps-mode-switch" role="tablist" aria-label="速率口径">
+              <button type="button" class="tps-mode-btn active" role="tab" aria-selected="true" data-tps-mode="e2e" id="tps-mode-e2e" title="端到端吞吐：输出 token ÷ 总模型耗时 (TTFT + 生成)">E2E</button>
+              <button type="button" class="tps-mode-btn" role="tab" aria-selected="false" data-tps-mode="decode" id="tps-mode-decode" title="纯解码速率：输出 token ÷ 流式生成时长（短包标 burst）">Decode</button>
+            </div>
+            <span class="kpi-badge muted" id="tps-badge">--</span>
+          </div>
+          <div class="kpi-value-row">
+            <span class="kpi-pct" id="tps-val">--</span>
+            <span class="kpi-unit hidden" id="tps-unit">tok/s</span>
+          </div>
+          <div class="kpi-sub" id="tps-sub">会话 --</div>
+        </article>
+      </section>
+
+      <section id="trend-card" class="panel-card">
+        <div class="panel-head">
+          <div class="metric-switch" role="tablist" aria-label="趋势指标">
+            <button type="button" class="metric-btn active" role="tab" aria-selected="true" data-metric="hit" id="metric-hit">命中率</button>
+            <button type="button" class="metric-btn" role="tab" aria-selected="false" data-metric="ttft" id="metric-ttft">TTFT</button>
+            <button type="button" class="metric-btn" role="tab" aria-selected="false" data-metric="tps" id="metric-tps">tok/s</button>
+          </div>
+          <span class="panel-meta" id="trend-meta">80% · 50% 参考线</span>
+        </div>
+        <div class="chart-wrap">
+          <div id="trend-chart" class="trend-chart"></div>
+          <div id="chart-tooltip" class="chart-tooltip hidden" role="tooltip"></div>
+        </div>
+      </section>
+
+      <section id="detail-card" class="panel-card detail-card">
+        <div class="tabs-bar" role="tablist" aria-label="缓存详情视图">
+          <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="steps" id="tab-steps">步骤明细 (0)</button>
+          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="models" id="tab-models">按模型汇总 (0)</button>
+        </div>
+        <div id="detail-body" class="detail-body"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
