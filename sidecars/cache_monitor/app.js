@@ -45,6 +45,8 @@
     contextCard: document.getElementById('context-card'),
     btnContextToggle: document.getElementById('btn-context-toggle'),
     contextLabel: document.getElementById('context-label'),
+    contextToggleChip: document.getElementById('context-toggle-chip'),
+    contextToggleHint: document.getElementById('context-toggle-hint'),
     contextCompactBadge: document.getElementById('context-compact-badge'),
     contextUsage: document.getElementById('context-usage'),
     contextPctBadge: document.getElementById('context-pct-badge'),
@@ -111,6 +113,9 @@
       },
       context: {
         all: 'All',
+        detailsLabel: 'Details',
+        expandTitle: 'Expand context token breakdown',
+        collapseTitle: 'Collapse context token breakdown',
         catLabel: (key) => ({
           'System Prompt': 'System Prompt',
           'Tools': 'Tools',
@@ -265,6 +270,9 @@
       },
       context: {
         all: '全部',
+        detailsLabel: '明细',
+        expandTitle: '展开上下文 Token 构成明细',
+        collapseTitle: '收起上下文 Token 构成明细',
         catLabel: (key) => ({
           'System Prompt': '系统提示词',
           'Tools': '工具定义',
@@ -557,6 +565,23 @@
     return nice * base;
   }
 
+  function hasContextBreakdown(context) {
+    const cats = context?.breakdown?.categories;
+    return Array.isArray(cats) && cats.some((c) => c.items && c.items.length > 0);
+  }
+
+  function syncContextToggleUi(context = state.payload?.context) {
+    const cx = tr().context;
+    const hasData = !context || hasContextBreakdown(context);
+    const isOpen = state.contextOpen && hasData;
+    el.contextToggleHint.textContent = cx.detailsLabel;
+    el.contextToggleChip.classList.toggle('hidden', !hasData);
+    el.btnContextToggle.disabled = !hasData;
+    el.btnContextToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    el.btnContextToggle.title = hasData ? (isOpen ? cx.collapseTitle : cx.expandTitle) : '';
+    el.contextBreakdown.classList.toggle('hidden', !isOpen);
+  }
+
   function applyStaticI18n() {
     const t = tr();
     const s = t.static;
@@ -572,6 +597,7 @@
     el.tpsModeDecode.title = s.tpsDecodeTitle;
     el.contextCard.setAttribute('aria-label', s.contextAria);
     el.contextLabel.textContent = s.contextLabel;
+    syncContextToggleUi();
     el.contextCatPills.setAttribute('aria-label', s.contextCatAria);
     el.metricSwitch.setAttribute('aria-label', s.metricSwitchAria);
     el.metricHit.textContent = s.metricHit;
@@ -630,8 +656,7 @@
 
   function setContextOpen(next, { persist = true, rerender = true } = {}) {
     state.contextOpen = Boolean(next);
-    el.btnContextToggle.setAttribute('aria-expanded', state.contextOpen ? 'true' : 'false');
-    el.contextBreakdown.classList.toggle('hidden', !state.contextOpen);
+    syncContextToggleUi();
     if (persist) {
       try {
         localStorage.setItem(CONTEXT_OPEN_STORAGE_KEY, state.contextOpen ? '1' : '0');
@@ -639,7 +664,7 @@
         // Sandboxed iframe origin may restrict storage.
       }
     }
-    if (rerender && state.payload?.status === 'ok' && state.payload.context) {
+    if (rerender && state.payload?.status === 'ok' && hasContextBreakdown(state.payload.context)) {
       renderContextBreakdown(state.payload.context);
     }
   }
@@ -711,7 +736,9 @@
 
   el.btnLang.addEventListener('click', () => setLang(state.lang === 'en' ? 'zh' : 'en'));
   el.btnCompact.addEventListener('click', () => setCompact(!state.compact));
-  el.btnContextToggle.addEventListener('click', () => setContextOpen(!state.contextOpen));
+  el.btnContextToggle.addEventListener('click', () => {
+    if (!el.btnContextToggle.disabled) setContextOpen(!state.contextOpen);
+  });
 
   el.contextCatPills.addEventListener('click', (e) => {
     const pill = e.target.closest?.('.ctx-cat-pill');
@@ -1077,7 +1104,8 @@
       el.contextLegend.innerHTML = '';
     }
 
-    if (state.contextOpen) {
+    syncContextToggleUi(context);
+    if (state.contextOpen && hasContextBreakdown(context)) {
       renderContextBreakdown(context);
     }
   }

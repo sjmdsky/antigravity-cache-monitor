@@ -6,8 +6,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; frame-src 'none'; child-src 'none'">
   <title>Cache Monitor</title>
   <script src="/preload.js"></script>
-  <link rel="stylesheet" href="/styles.css?v=9">
-  <script defer src="/app.js?v=9"></script>
+  <link rel="stylesheet" href="/styles.css?v=10">
+  <script defer src="/app.js?v=10"></script>
 </head>
 <body>
   <div id="app" class="shell">
@@ -97,9 +97,14 @@
 
       <section id="context-card" class="panel-card context-card hidden" aria-label="Context window">
         <div class="context-head">
-          <button id="btn-context-toggle" type="button" class="context-toggle" aria-expanded="false" aria-controls="context-breakdown">
+          <button id="btn-context-toggle" type="button" class="context-toggle" aria-expanded="false" aria-controls="context-breakdown" title="Expand context token breakdown">
             <span class="panel-title" id="context-label">Context Window</span>
-            <span class="context-chevron" id="context-chevron" aria-hidden="true">▾</span>
+            <span class="context-toggle-chip" id="context-toggle-chip">
+              <span id="context-toggle-hint">Details</span>
+              <svg class="context-chevron" id="context-chevron" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 6l4 4 4-4"/>
+              </svg>
+            </span>
           </button>
           <div class="context-nums">
             <span id="context-compact-badge" class="kpi-badge compact-ev hidden"></span>

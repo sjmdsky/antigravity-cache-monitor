@@ -600,25 +600,64 @@ body {
   appearance: none;
   border: none;
   background: transparent;
-  padding: 0;
-  margin: 0;
+  padding: 2px 4px 2px 2px;
+  margin: -2px -4px -2px -2px;
+  border-radius: 6px;
   color: var(--cm-fg);
   font-family: inherit;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   cursor: pointer;
 }
 
-.context-toggle:hover {
-  opacity: 0.8;
+.context-toggle:disabled {
+  cursor: default;
+}
+
+.context-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cm-primary) 65%, transparent);
+  outline-offset: 1px;
+}
+
+.context-toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--cm-border);
+  background: var(--cm-muted);
+  color: var(--cm-fg-2);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.context-toggle:not(:disabled):hover .context-toggle-chip {
+  background: color-mix(in srgb, var(--cm-primary) 12%, var(--cm-card));
+  border-color: color-mix(in srgb, var(--cm-primary) 42%, var(--cm-border));
+  color: var(--cm-fg);
+}
+
+.context-toggle[aria-expanded="true"] .context-toggle-chip {
+  background: color-mix(in srgb, var(--cm-primary) 16%, var(--cm-card));
+  border-color: color-mix(in srgb, var(--cm-primary) 45%, var(--cm-border));
+  color: var(--cm-fg);
+  font-weight: 600;
+}
+
+.context-toggle[aria-expanded="true"]:not(:disabled):hover .context-toggle-chip {
+  background: color-mix(in srgb, var(--cm-primary) 22%, var(--cm-card));
+  border-color: color-mix(in srgb, var(--cm-primary) 55%, var(--cm-border));
 }
 
 .context-chevron {
-  font-size: 10px;
-  color: var(--cm-fg-muted);
-  transition: transform 0.15s ease;
-  display: inline-block;
+  display: block;
+  flex-shrink: 0;
+  transition: transform 0.16s ease;
 }
 
 .context-toggle[aria-expanded="true"] .context-chevron {
