@@ -1306,10 +1306,16 @@
 
       const limit = context?.limit || Math.max(...visible.map((s) => s.contextLimit || 0), 0);
       const maxVal = Math.max(...validCtx, 1000);
-      const rawCeil = limit > 0
-        ? (maxVal > limit * 0.6 ? limit : Math.max(maxVal * 1.15, limit * 0.25))
-        : maxVal * 1.15;
-      const yMax = niceCeil(rawCeil);
+      let yMax;
+      if (limit > 0 && maxVal > limit * 0.6 && maxVal <= limit) {
+        yMax = limit;
+      } else {
+        const rawCeil = limit > 0
+          ? Math.max(maxVal * 1.15, limit * 0.25)
+          : maxVal * 1.15;
+        yMax = niceCeil(rawCeil);
+        if (limit > 0 && maxVal <= limit && yMax > limit) yMax = limit;
+      }
       const yAt = (v) => top + (1 - Math.min(v, yMax) / yMax) * plotH;
       const fmtTickCtx = (v) => (v === 0 ? '0' : fmtTokens(Math.round(v)).replace(/\.0([kM])$/, '$1'));
 

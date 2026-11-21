@@ -14,6 +14,7 @@
     <a href="./README.md">English</a> · <strong>简体中文</strong>
   </p>
   <p>
+    <a href="#效果预览">效果预览</a> ·
     <a href="#核心特性">核心特性</a> ·
     <a href="#快速开始">快速开始</a> ·
     <a href="#核心指标与色阶">核心指标与色阶</a> ·
@@ -24,6 +25,28 @@
 </div>
 
 ---
+
+## 效果预览
+
+<table>
+  <tr>
+    <td width="33%" valign="top" align="center">
+      <strong>深色主题 · 总览与上下文拆解</strong><br />
+      <img src="./assets/screenshots/overview-dark.png" alt="Cache Monitor 深色主题总览与上下文拆解" width="270" /><br />
+      <sub>2×2 核心指标、展开式 Token 构成明细、带 <code>✂</code> / <code>↻</code> 标记的命中率趋势图与步骤表</sub>
+    </td>
+    <td width="33%" valign="top" align="center">
+      <strong>上下文趋势 (<code>Ctx</code>) 与工具分析</strong><br />
+      <img src="./assets/screenshots/tools-dark.png" alt="Cache Monitor 上下文趋势与工具耗时分析" width="270" /><br />
+      <sub>上下文增长与压缩回落曲线 + 模型 vs 工具墙钟耗时拆分及按工具延迟统计</sub>
+    </td>
+    <td width="33%" valign="top" align="center">
+      <strong>浅色主题 · 中文界面与模型汇总</strong><br />
+      <img src="./assets/screenshots/overview-light-zh.png" alt="Cache Monitor 浅色主题中文界面与按模型汇总" width="270" /><br />
+      <sub>自适应宿主浅色主题、一键 <code>中文 / EN</code> 切换、TTFT 趋势图与按模型汇总表</sub>
+    </td>
+  </tr>
+</table>
 
 ## 核心特性
 
@@ -167,7 +190,8 @@ flowchart LR
 cache-monitor/
 ├── plugin.json                  # Antigravity 插件元数据与图标配置
 ├── assets/
-│   └── logo.svg                 # 插件图标
+│   ├── logo.svg                 # 插件图标
+│   └── screenshots/             # README 效果预览截图（深色总览 / 工具分析 / 浅色中文）
 ├── sidecars/
 │   └── cache_monitor/
 │       ├── sidecar.json         # Sidecar 进程与 AUX_PANE 入口配置
