@@ -124,13 +124,13 @@ git clone https://github.com/sjmdsky/antigravity-cache-monitor.git "$HOME\.gemin
 
 | UI Region | Capabilities & Interactions |
 | :--- | :--- |
-| **Top Bar** | Displays the active model pill, **Compact (`紧凑`)** toggle button (collapses the chart and detail tabs to keep only the 2×2 KPI cards), and `Live / Paused / Reconnecting` polling status. |
+| **Top Bar** | Displays the active model pill, **Language (`中文 / EN`)** toggle button (English by default, one-click switch to Simplified Chinese), **Compact** toggle button (collapses the chart and detail tabs to keep only the 2×2 KPI cards), and `Live / Paused / Reconnecting` polling status. |
 | **2×2 KPI Grid** | Top row tracks Step and Σ Session cache hit rates; bottom row tracks TTFT and the `E2E / Decode` tok/s switcher. |
 | **3-Metric Trend Chart** | Switches between Hit Rate, TTFT, and tok/s (auto-focusing the latest 48 steps); hover tooltip shows hit rate, TTFT, both E2E and Decode tok/s, `thinking / response` token split, and model/tool duration details. |
-| **Steps Table (`步骤明细`)** | Reverse-chronological per-step breakdown: `Step \| Hit \| TTFT \| tok/s \| Read / New \| Output \| Duration \| Model \| Time` (UI headers: `步 \| 命中 \| TTFT \| tok/s \| 读 / 新增 \| 输出 \| 用时 \| 模型 \| 时间`). |
-| **By Model Table (`按模型汇总`)** | Per-model summary table: `Model \| Steps \| Hit Rate \| P50 TTFT \| tok/s \| Hit / Total Input \| Output \| Total Duration`. |
+| **Steps Table** | Reverse-chronological per-step breakdown: `Step \| Hit \| TTFT \| tok/s \| Read / New \| Out \| Dur \| Model \| Time`. |
+| **By Model Table** | Per-model summary table: `Model \| Steps \| Hit Rate \| P50 TTFT \| tok/s \| Hit / Total \| Out \| Time`. |
 
-> Compact mode state, active chart metric, and `E2E / Decode` speed mode are automatically persisted in `localStorage` across reloads and conversation switches.
+> Language preference, compact mode state, active chart metric, and `E2E / Decode` speed mode are automatically persisted in `localStorage` across reloads and conversation switches.
 
 ## Architecture
 

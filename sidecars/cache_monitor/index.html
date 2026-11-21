@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; frame-src 'none'; child-src 'none'">
   <title>Cache Monitor</title>
   <script src="/preload.js"></script>
-  <link rel="stylesheet" href="/styles.css?v=6">
-  <script defer src="/app.js?v=6"></script>
+  <link rel="stylesheet" href="/styles.css?v=7">
+  <script defer src="/app.js?v=7"></script>
 </head>
 <body>
   <div id="app" class="shell">
@@ -24,8 +24,9 @@
         <span id="model-pill" class="model-pill hidden"></span>
       </div>
       <div class="topbar-right">
-        <button id="btn-compact" type="button" class="toggle-btn" aria-pressed="false" title="切换紧凑视图（仅保留核心指标卡片）">紧凑</button>
-        <span id="live-pill" class="live-pill" title="每 1.5 秒自动检查更新">
+        <button id="btn-lang" type="button" class="toggle-btn lang-btn" title="Switch to Chinese (简体中文)">中文</button>
+        <button id="btn-compact" type="button" class="toggle-btn" aria-pressed="false" title="Toggle compact view (keep KPI cards only)">Compact</button>
+        <span id="live-pill" class="live-pill" title="Auto-checks for updates every 1.5s">
           <span class="live-dot" aria-hidden="true"></span>
           <span id="live-text">Live</span>
         </span>
@@ -33,15 +34,15 @@
     </header>
 
     <section id="empty-state" class="empty-card">
-      <div class="empty-title" id="empty-title">等待会话开始</div>
-      <div class="empty-desc" id="empty-desc">发送首条消息并收到模型响应后，将自动显示单步与累计缓存命中率。</div>
+      <div class="empty-title" id="empty-title">Waiting for session</div>
+      <div class="empty-desc" id="empty-desc">Send a message and wait for a model response to view per-step and session cache hit rates.</div>
     </section>
 
     <main id="dashboard" class="dashboard hidden">
-      <section class="kpi-grid" aria-label="核心监控指标">
+      <section id="kpi-grid" class="kpi-grid" aria-label="Core metrics">
         <article id="kpi-step" class="kpi-card">
           <div class="kpi-head">
-            <span class="kpi-label" id="step-label">单步 · Step #0</span>
+            <span class="kpi-label" id="step-label">Step #0</span>
             <span class="kpi-badge muted" id="step-badge">--</span>
           </div>
           <div class="kpi-value-row">
@@ -55,7 +56,7 @@
 
         <article id="kpi-total" class="kpi-card">
           <div class="kpi-head">
-            <span class="kpi-label">累计 · Σ Session</span>
+            <span class="kpi-label" id="total-label">Total · Σ Session</span>
             <span class="kpi-badge muted" id="total-badge">0 steps</span>
           </div>
           <div class="kpi-value-row">
@@ -69,7 +70,7 @@
 
         <article id="kpi-ttft" class="kpi-card kpi-card-perf">
           <div class="kpi-head">
-            <span class="kpi-label" id="ttft-label">TTFT · 首字延迟</span>
+            <span class="kpi-label" id="ttft-label">TTFT · First Token</span>
             <span class="kpi-badge muted" id="ttft-badge">--</span>
           </div>
           <div class="kpi-value-row">
@@ -80,9 +81,9 @@
 
         <article id="kpi-tps" class="kpi-card kpi-card-perf">
           <div class="kpi-head">
-            <div class="tps-mode-switch" role="tablist" aria-label="速率口径">
-              <button type="button" class="tps-mode-btn active" role="tab" aria-selected="true" data-tps-mode="e2e" id="tps-mode-e2e" title="端到端吞吐：输出 token ÷ 总模型耗时 (TTFT + 生成)">E2E</button>
-              <button type="button" class="tps-mode-btn" role="tab" aria-selected="false" data-tps-mode="decode" id="tps-mode-decode" title="纯解码速率：输出 token ÷ 流式生成时长（短包标 burst）">Decode</button>
+            <div id="tps-switch" class="tps-mode-switch" role="tablist" aria-label="Throughput mode">
+              <button type="button" class="tps-mode-btn active" role="tab" aria-selected="true" data-tps-mode="e2e" id="tps-mode-e2e" title="End-to-end throughput: output tokens ÷ total model duration (TTFT + generation)">E2E</button>
+              <button type="button" class="tps-mode-btn" role="tab" aria-selected="false" data-tps-mode="decode" id="tps-mode-decode" title="Pure decode speed: output tokens ÷ streaming generation duration (short packets marked burst)">Decode</button>
             </div>
             <span class="kpi-badge muted" id="tps-badge">--</span>
           </div>
@@ -90,18 +91,18 @@
             <span class="kpi-pct" id="tps-val">--</span>
             <span class="kpi-unit hidden" id="tps-unit">tok/s</span>
           </div>
-          <div class="kpi-sub" id="tps-sub">会话 --</div>
+          <div class="kpi-sub" id="tps-sub">Session --</div>
         </article>
       </section>
 
       <section id="trend-card" class="panel-card">
         <div class="panel-head">
-          <div class="metric-switch" role="tablist" aria-label="趋势指标">
-            <button type="button" class="metric-btn active" role="tab" aria-selected="true" data-metric="hit" id="metric-hit">命中率</button>
+          <div id="metric-switch" class="metric-switch" role="tablist" aria-label="Trend metric">
+            <button type="button" class="metric-btn active" role="tab" aria-selected="true" data-metric="hit" id="metric-hit">Hit Rate</button>
             <button type="button" class="metric-btn" role="tab" aria-selected="false" data-metric="ttft" id="metric-ttft">TTFT</button>
             <button type="button" class="metric-btn" role="tab" aria-selected="false" data-metric="tps" id="metric-tps">tok/s</button>
           </div>
-          <span class="panel-meta" id="trend-meta">80% · 50% 参考线</span>
+          <span class="panel-meta" id="trend-meta">80% · 50% ref</span>
         </div>
         <div class="chart-wrap">
           <div id="trend-chart" class="trend-chart"></div>
@@ -110,9 +111,9 @@
       </section>
 
       <section id="detail-card" class="panel-card detail-card">
-        <div class="tabs-bar" role="tablist" aria-label="缓存详情视图">
-          <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="steps" id="tab-steps">步骤明细 (0)</button>
-          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="models" id="tab-models">按模型汇总 (0)</button>
+        <div id="tabs-bar" class="tabs-bar" role="tablist" aria-label="Detail views">
+          <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="steps" id="tab-steps">Steps (0)</button>
+          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="models" id="tab-models">By Model (0)</button>
         </div>
         <div id="detail-body" class="detail-body"></div>
       </section>
